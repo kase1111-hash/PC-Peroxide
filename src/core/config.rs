@@ -19,6 +19,9 @@ pub struct Config {
     pub logging: LoggingConfig,
     /// Quarantine settings
     pub quarantine: QuarantineConfig,
+    /// LLM analysis settings
+    #[serde(default)]
+    pub llm: LlmConfig,
 }
 
 impl Default for Config {
@@ -30,6 +33,7 @@ impl Default for Config {
             updates: UpdateConfig::default(),
             logging: LoggingConfig::default(),
             quarantine: QuarantineConfig::default(),
+            llm: LlmConfig::default(),
         }
     }
 }
@@ -351,6 +355,73 @@ impl QuarantineConfig {
         self.vault_path
             .clone()
             .unwrap_or_else(|| Config::data_dir().join("quarantine"))
+    }
+}
+
+/// LLM-based analysis configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmConfig {
+    /// Whether LLM analysis is enabled
+    pub enabled: bool,
+    /// Provider type (ollama, openai, none)
+    pub provider: String,
+    /// Model name/identifier
+    pub model: String,
+    /// API endpoint URL
+    pub endpoint: String,
+    /// API key (for OpenAI-compatible APIs)
+    pub api_key: Option<String>,
+    /// Maximum context length in tokens
+    pub max_context_length: usize,
+    /// Request timeout in seconds
+    pub timeout_secs: u64,
+    /// Confidence threshold for reporting (0.0 - 1.0)
+    pub confidence_threshold: f32,
+    /// Temperature for generation (0.0 - 2.0)
+    pub temperature: f32,
+    /// Analyze suspicious files automatically
+    pub auto_analyze: bool,
+    /// Maximum file size to analyze (bytes)
+    pub max_file_size: u64,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: "ollama".to_string(),
+            model: "llama3.2".to_string(),
+            endpoint: "http://localhost:11434".to_string(),
+            api_key: None,
+            max_context_length: 16384,
+            timeout_secs: 120,
+            confidence_threshold: 0.7,
+            temperature: 0.3,
+            auto_analyze: false,
+            max_file_size: 100_000, // 100KB default
+        }
+    }
+}
+
+impl LlmConfig {
+    /// Check if LLM is configured and enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled && !self.provider.is_empty() && self.provider != "none"
+    }
+
+    /// Create a provider config from this configuration.
+    pub fn to_provider_config(&self) -> crate::analysis::ProviderConfig {
+        crate::analysis::ProviderConfig {
+            provider: crate::analysis::LlmProvider::from_str(&self.provider),
+            model: self.model.clone(),
+            endpoint: self.endpoint.clone(),
+            api_key: self.api_key.clone(),
+            max_context_length: self.max_context_length,
+            timeout_secs: self.timeout_secs,
+            confidence_threshold: self.confidence_threshold,
+            temperature: self.temperature,
+            model_path: None,
+        }
     }
 }
 
