@@ -26,7 +26,7 @@ pub enum WhitelistType {
 
 impl WhitelistType {
     /// Convert to database string.
-    fn to_db(&self) -> &'static str {
+    fn to_db(self) -> &'static str {
         match self {
             Self::Hash => "hash",
             Self::Path => "path",

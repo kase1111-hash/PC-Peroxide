@@ -278,7 +278,7 @@ impl StartupScanner {
         }
 
         // Determine suspicion level
-        let suspicious_score = self.calculate_suspicion(&entry);
+        let suspicious_score = self.calculate_suspicion(entry);
 
         if suspicious_score > 0 {
             let reason = self.get_suspicion_reason(entry);

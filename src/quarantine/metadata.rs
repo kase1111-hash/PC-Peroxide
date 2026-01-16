@@ -39,6 +39,7 @@ pub struct QuarantineItem {
 
 impl QuarantineItem {
     /// Create a new quarantine item.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         original_path: PathBuf,

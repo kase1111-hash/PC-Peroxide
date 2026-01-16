@@ -31,16 +31,17 @@ pub enum LlmProvider {
     None,
 }
 
-impl LlmProvider {
-    /// Parse provider from string.
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl std::str::FromStr for LlmProvider {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "ollama" => Self::Ollama,
             "openai" | "openai-compatible" | "api" => Self::OpenAi,
             "mock" | "test" => Self::Mock,
             "none" | "disabled" | "" => Self::None,
             _ => Self::None,
-        }
+        })
     }
 }
 
@@ -268,9 +269,9 @@ mod tests {
 
     #[test]
     fn test_llm_provider_from_str() {
-        assert_eq!(LlmProvider::from_str("ollama"), LlmProvider::Ollama);
-        assert_eq!(LlmProvider::from_str("openai"), LlmProvider::OpenAi);
-        assert_eq!(LlmProvider::from_str("none"), LlmProvider::None);
+        assert_eq!("ollama".parse::<LlmProvider>().unwrap(), LlmProvider::Ollama);
+        assert_eq!("openai".parse::<LlmProvider>().unwrap(), LlmProvider::OpenAi);
+        assert_eq!("none".parse::<LlmProvider>().unwrap(), LlmProvider::None);
     }
 
     #[tokio::test]

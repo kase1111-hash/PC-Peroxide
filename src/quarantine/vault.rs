@@ -332,14 +332,15 @@ impl QuarantineVault {
         let items_path = self.items_path();
 
         if items_path.exists() {
-            for entry in fs::read_dir(&items_path).map_err(|e| Error::DirectoryAccess {
-                path: items_path.clone(),
-                source: e,
-            })? {
-                if let Ok(entry) = entry {
-                    if let Ok(metadata) = entry.metadata() {
-                        size += metadata.len();
-                    }
+            for entry in fs::read_dir(&items_path)
+                .map_err(|e| Error::DirectoryAccess {
+                    path: items_path.clone(),
+                    source: e,
+                })?
+                .flatten()
+            {
+                if let Ok(metadata) = entry.metadata() {
+                    size += metadata.len();
                 }
             }
         }

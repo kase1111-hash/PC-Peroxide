@@ -256,7 +256,7 @@ impl FileScanner {
         let (tx, mut rx) = mpsc::channel::<ScanResult>(1000);
 
         // Spawn worker tasks
-        let num_workers = self.config.scan.scan_threads.min(8).max(1);
+        let num_workers = self.config.scan.scan_threads.clamp(1, 8);
         let mut handles = Vec::new();
 
         for _ in 0..num_workers {

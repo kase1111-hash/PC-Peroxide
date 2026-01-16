@@ -85,6 +85,7 @@ impl ScanProgress {
 }
 
 /// Progress tracker for real-time scan monitoring.
+#[allow(clippy::type_complexity)]
 pub struct ProgressTracker {
     files_scanned: AtomicU64,
     directories_scanned: AtomicU64,

@@ -455,7 +455,7 @@ impl ExtensionScanner {
                         // Firefox extensions can be .xpi files or directories
                         let manifest_path = if ext_path.is_dir() {
                             ext_path.join("manifest.json")
-                        } else if ext_path.extension().map_or(false, |e| e == "xpi") {
+                        } else if ext_path.extension().is_some_and(|e| e == "xpi") {
                             // Would need to extract XPI to read manifest
                             continue;
                         } else {

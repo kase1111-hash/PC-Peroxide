@@ -97,6 +97,7 @@ async fn run() -> Result<()> {
 }
 
 /// Run a malware scan.
+#[allow(clippy::too_many_arguments)]
 async fn run_scan(
     config: Arc<Config>,
     quick: bool,

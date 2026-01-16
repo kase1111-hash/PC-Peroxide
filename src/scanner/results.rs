@@ -217,8 +217,8 @@ impl ScanResultStore {
                 Ok(Detection {
                     path: PathBuf::from(row.get::<_, String>(0)?),
                     threat_name: row.get(1)?,
-                    severity: Severity::from_str(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
-                    category: ThreatCategory::from_str(&row.get::<_, String>(3)?)
+                    severity: Severity::parse(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
+                    category: ThreatCategory::parse(&row.get::<_, String>(3)?)
                         .unwrap_or(ThreatCategory::Unknown),
                     method: detection_method_from_str(&row.get::<_, String>(4)?),
                     description: row.get(5)?,
@@ -293,8 +293,8 @@ impl ScanResultStore {
                 Ok(Detection {
                     path: PathBuf::from(row.get::<_, String>(0)?),
                     threat_name: row.get(1)?,
-                    severity: Severity::from_str(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
-                    category: ThreatCategory::from_str(&row.get::<_, String>(3)?)
+                    severity: Severity::parse(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
+                    category: ThreatCategory::parse(&row.get::<_, String>(3)?)
                         .unwrap_or(ThreatCategory::Unknown),
                     method: detection_method_from_str(&row.get::<_, String>(4)?),
                     description: row.get(5)?,

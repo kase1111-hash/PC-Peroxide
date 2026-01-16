@@ -32,7 +32,7 @@ impl SignatureType {
     }
 
     /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "hash" | "sha256" => Some(SignatureType::Hash),
             "md5" => Some(SignatureType::Md5),
@@ -68,7 +68,7 @@ impl RemediationAction {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "delete" => Some(RemediationAction::Delete),
             "quarantine" => Some(RemediationAction::Quarantine),
@@ -288,10 +288,10 @@ mod tests {
 
     #[test]
     fn test_signature_type_parsing() {
-        assert_eq!(SignatureType::from_str("hash"), Some(SignatureType::Hash));
-        assert_eq!(SignatureType::from_str("SHA256"), Some(SignatureType::Hash));
-        assert_eq!(SignatureType::from_str("pattern"), Some(SignatureType::Pattern));
-        assert_eq!(SignatureType::from_str("invalid"), None);
+        assert_eq!(SignatureType::parse("hash"), Some(SignatureType::Hash));
+        assert_eq!(SignatureType::parse("SHA256"), Some(SignatureType::Hash));
+        assert_eq!(SignatureType::parse("pattern"), Some(SignatureType::Pattern));
+        assert_eq!(SignatureType::parse("invalid"), None);
     }
 
     #[test]

@@ -118,6 +118,7 @@ impl RegistryEntry {
         }
 
         // Handle quoted paths
+        #[allow(clippy::manual_strip)]
         if cmd.starts_with('"') {
             if let Some(end_quote) = cmd[1..].find('"') {
                 let path = &cmd[1..=end_quote];
