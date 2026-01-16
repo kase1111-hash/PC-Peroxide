@@ -38,6 +38,27 @@ impl Severity {
             _ => Severity::Critical,
         }
     }
+
+    /// Get string representation for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Low => "low",
+            Severity::Medium => "medium",
+            Severity::High => "high",
+            Severity::Critical => "critical",
+        }
+    }
+
+    /// Parse from string.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "low" => Some(Severity::Low),
+            "medium" => Some(Severity::Medium),
+            "high" => Some(Severity::High),
+            "critical" => Some(Severity::Critical),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Severity {
@@ -81,6 +102,55 @@ pub enum ThreatCategory {
     Dropper,
     /// Generic / unclassified
     Generic,
+    /// Test file (e.g., EICAR)
+    TestFile,
+    /// Unknown category
+    Unknown,
+}
+
+impl ThreatCategory {
+    /// Get string representation for database storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ThreatCategory::Trojan => "trojan",
+            ThreatCategory::Ransomware => "ransomware",
+            ThreatCategory::Virus => "virus",
+            ThreatCategory::Worm => "worm",
+            ThreatCategory::Spyware => "spyware",
+            ThreatCategory::Adware => "adware",
+            ThreatCategory::Rootkit => "rootkit",
+            ThreatCategory::Backdoor => "backdoor",
+            ThreatCategory::Miner => "miner",
+            ThreatCategory::Pup => "pup",
+            ThreatCategory::Exploit => "exploit",
+            ThreatCategory::Dropper => "dropper",
+            ThreatCategory::Generic => "generic",
+            ThreatCategory::TestFile => "testfile",
+            ThreatCategory::Unknown => "unknown",
+        }
+    }
+
+    /// Parse from string.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "trojan" => Some(ThreatCategory::Trojan),
+            "ransomware" => Some(ThreatCategory::Ransomware),
+            "virus" => Some(ThreatCategory::Virus),
+            "worm" => Some(ThreatCategory::Worm),
+            "spyware" => Some(ThreatCategory::Spyware),
+            "adware" => Some(ThreatCategory::Adware),
+            "rootkit" => Some(ThreatCategory::Rootkit),
+            "backdoor" => Some(ThreatCategory::Backdoor),
+            "miner" => Some(ThreatCategory::Miner),
+            "pup" => Some(ThreatCategory::Pup),
+            "exploit" => Some(ThreatCategory::Exploit),
+            "dropper" => Some(ThreatCategory::Dropper),
+            "generic" => Some(ThreatCategory::Generic),
+            "testfile" | "test" => Some(ThreatCategory::TestFile),
+            "unknown" => Some(ThreatCategory::Unknown),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for ThreatCategory {
@@ -99,6 +169,8 @@ impl std::fmt::Display for ThreatCategory {
             ThreatCategory::Exploit => write!(f, "Exploit"),
             ThreatCategory::Dropper => write!(f, "Dropper"),
             ThreatCategory::Generic => write!(f, "Generic"),
+            ThreatCategory::TestFile => write!(f, "Test File"),
+            ThreatCategory::Unknown => write!(f, "Unknown"),
         }
     }
 }
@@ -261,8 +333,6 @@ impl FilePriority {
 /// A detected threat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Detection {
-    /// Unique identifier for this detection
-    pub id: String,
     /// Path to the detected file
     pub path: PathBuf,
     /// Name of the detected threat
@@ -272,51 +342,52 @@ pub struct Detection {
     /// Category of threat
     pub category: ThreatCategory,
     /// How the threat was detected
-    pub detection_method: DetectionMethod,
-    /// SHA256 hash of the file
-    pub sha256: String,
-    /// MD5 hash of the file (for compatibility)
-    pub md5: Option<String>,
-    /// File size in bytes
-    pub file_size: u64,
-    /// Heuristic score (0-100)
-    pub heuristic_score: Option<u8>,
+    pub method: DetectionMethod,
     /// Description of the threat
     pub description: String,
-    /// Recommended action
-    pub recommended_action: RemediationAction,
-    /// Timestamp of detection
-    pub detected_at: DateTime<Utc>,
-    /// Action taken (if any)
-    pub action_taken: Option<RemediationAction>,
+    /// SHA256 hash of the file (if available)
+    pub sha256: Option<String>,
+    /// Heuristic score (0-100)
+    pub score: u8,
 }
 
 impl Detection {
     /// Create a new detection.
     pub fn new(
         path: PathBuf,
-        threat_name: String,
+        threat_name: impl Into<String>,
         severity: Severity,
         category: ThreatCategory,
-        detection_method: DetectionMethod,
-        sha256: String,
+        method: DetectionMethod,
     ) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
             path,
-            threat_name,
+            threat_name: threat_name.into(),
             severity,
             category,
-            detection_method,
-            sha256,
-            md5: None,
-            file_size: 0,
-            heuristic_score: None,
+            method,
             description: String::new(),
-            recommended_action: RemediationAction::Quarantine,
-            detected_at: Utc::now(),
-            action_taken: None,
+            sha256: None,
+            score: severity.score(),
         }
+    }
+
+    /// Set the description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    /// Set the SHA256 hash.
+    pub fn with_sha256(mut self, sha256: impl Into<String>) -> Self {
+        self.sha256 = Some(sha256.into());
+        self
+    }
+
+    /// Set the heuristic score.
+    pub fn with_score(mut self, score: u8) -> Self {
+        self.score = score;
+        self
     }
 }
 

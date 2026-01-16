@@ -60,13 +60,19 @@ pub enum Error {
 
     // ===== Database Errors =====
     #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    DatabaseSql(#[from] rusqlite::Error),
+
+    #[error("Database operation failed: {0}")]
+    Database(String),
 
     #[error("Failed to initialize database: {0}")]
     DatabaseInit(String),
 
     #[error("Signature not found: {0}")]
     SignatureNotFound(String),
+
+    #[error("Failed to load signatures: {0}")]
+    SignatureLoad(String),
 
     // ===== Scanning Errors =====
     #[error("Scan was cancelled")]

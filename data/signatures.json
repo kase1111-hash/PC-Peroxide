@@ -1,0 +1,56 @@
+{
+  "version": "2025.01.16",
+  "format_version": 1,
+  "updated_at": "2025-01-16T00:00:00Z",
+  "signatures": [
+    {
+      "id": "EICAR-TEST-FILE",
+      "name": "EICAR-Test-File",
+      "type": "hash",
+      "hash_sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "hash_md5": "44d88612fea8a8f36de82e1278abb02f",
+      "severity": "low",
+      "category": "testfile",
+      "description": "EICAR Anti-Virus Test File - harmless test file for verifying antivirus functionality",
+      "remediation": "report",
+      "enabled": true,
+      "tags": ["test", "eicar", "safe"]
+    },
+    {
+      "id": "MAL-EXAMPLE-001",
+      "name": "Trojan.Example.A",
+      "type": "hash",
+      "hash_sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "severity": "high",
+      "category": "trojan",
+      "description": "Example trojan signature for demonstration purposes",
+      "remediation": "quarantine",
+      "enabled": true,
+      "tags": ["example", "trojan"]
+    },
+    {
+      "id": "MAL-EXAMPLE-002",
+      "name": "Ransomware.Example.A",
+      "type": "hash",
+      "hash_sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+      "severity": "critical",
+      "category": "ransomware",
+      "description": "Example ransomware signature for demonstration purposes",
+      "remediation": "quarantine",
+      "enabled": true,
+      "tags": ["example", "ransomware", "crypto"]
+    },
+    {
+      "id": "MAL-EXAMPLE-003",
+      "name": "Adware.Example.A",
+      "type": "hash",
+      "hash_sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+      "severity": "low",
+      "category": "adware",
+      "description": "Example adware/PUP signature for demonstration purposes",
+      "remediation": "report",
+      "enabled": true,
+      "tags": ["example", "adware", "pup"]
+    }
+  ]
+}

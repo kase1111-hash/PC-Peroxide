@@ -2,12 +2,14 @@
 //!
 //! This module provides various detection methods:
 //! - Signature-based detection (hash matching)
-//! - Heuristic analysis (PE inspection, entropy, imports)
-//! - YARA rules integration
-//! - Behavioral pattern detection
+//! - Heuristic analysis (PE inspection, entropy, imports) - Phase 4
+//! - YARA rules integration - Phase 8
+//! - Behavioral pattern detection - Phase 6
 
-// Modules will be added in later phases
-// pub mod signature;
-// pub mod heuristic;
-// pub mod yara;
-// pub mod behavioral;
+pub mod database;
+pub mod matcher;
+pub mod signature;
+
+pub use database::{ImportResult, SignatureDatabase};
+pub use matcher::{DetectionEngine, HashMatcher, MatchResult};
+pub use signature::{DatabaseInfo, RemediationAction, Signature, SignatureFile, SignatureType};
