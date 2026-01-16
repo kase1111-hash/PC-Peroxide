@@ -59,6 +59,9 @@ goblin = "0.8"
 aes-gcm = "0.10"
 rand = "0.8"
 
+# Pattern matching (for YARA-like rules)
+regex = "1.10"
+
 [target.'cfg(windows)'.dependencies]
 # Windows-specific APIs
 winreg = "0.52"
