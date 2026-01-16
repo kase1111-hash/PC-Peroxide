@@ -1,0 +1,38 @@
+# Cargo configuration for PC-Peroxide
+
+# Windows cross-compilation targets
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+[target.x86_64-pc-windows-msvc]
+# Uses MSVC linker when available
+
+[target.i686-pc-windows-gnu]
+linker = "i686-w64-mingw32-gcc"
+
+# Build settings
+[build]
+# Uncomment to set default target for Windows builds
+# target = "x86_64-pc-windows-gnu"
+
+[profile.release]
+# Enable LTO for smaller binaries
+lto = true
+# Single codegen unit for better optimization
+codegen-units = 1
+# Strip symbols for smaller binary
+strip = true
+# Optimize for size with good performance
+opt-level = "z"
+
+[profile.dev]
+# Faster builds in development
+opt-level = 0
+debug = true
+
+# Alias for common commands
+[alias]
+br = "build --release"
+bw = "build --release --target x86_64-pc-windows-gnu"
+t = "test"
+c = "check"
