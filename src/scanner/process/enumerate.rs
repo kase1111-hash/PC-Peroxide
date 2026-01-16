@@ -178,7 +178,8 @@ impl ProcessEnumerator {
         use std::mem;
         use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
-        use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+        use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
+        use windows::core::PWSTR;
         use windows::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW,
             PROCESSENTRY32W, TH32CS_SNAPPROCESS,
@@ -223,7 +224,7 @@ impl ProcessEnumerator {
                         let mut buffer = [0u16; MAX_PATH as usize];
                         let mut size = buffer.len() as u32;
 
-                        if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, &mut buffer, &mut size).is_ok() {
+                        if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR::from_raw(buffer.as_mut_ptr()), &mut size).is_ok() {
                             let path = OsString::from_wide(&buffer[..size as usize])
                                 .to_string_lossy()
                                 .to_string();
@@ -261,6 +262,7 @@ impl ProcessEnumerator {
         use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
         use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
+        use windows::core::PWSTR;
         use windows::Win32::System::Threading::{
             OpenProcess, QueryFullProcessImageNameW,
             PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -271,7 +273,7 @@ impl ProcessEnumerator {
                 let mut buffer = [0u16; MAX_PATH as usize];
                 let mut size = buffer.len() as u32;
 
-                let path = if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, &mut buffer, &mut size).is_ok() {
+                let path = if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR::from_raw(buffer.as_mut_ptr()), &mut size).is_ok() {
                     let path_str = OsString::from_wide(&buffer[..size as usize])
                         .to_string_lossy()
                         .to_string();

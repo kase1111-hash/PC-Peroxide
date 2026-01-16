@@ -695,33 +695,32 @@ impl RegistryScanner {
 
         if let Ok(key) = root.open_subkey(subpath) {
             for (name, value) in key.enum_values().filter_map(|v| v.ok()) {
-                if let Ok(data) = value.to_string() {
-                    let is_known = self.is_known_entry(&name);
-                    let suspicious_score = self.check_path_suspicious(&data);
+                let data = value.to_string();
+                let is_known = self.is_known_entry(&name);
+                let suspicious_score = self.check_path_suspicious(&data);
 
-                    let mut entry = PersistenceEntry::new(
-                        persistence_type,
-                        &name,
-                        path,
-                    );
+                let mut entry = PersistenceEntry::new(
+                    persistence_type,
+                    &name,
+                    path,
+                );
 
-                    let (exe_path, args) = RegistryEntry::parse_command_line(&data);
-                    if let Some(ref p) = exe_path {
-                        entry = entry.with_path(p);
-                    }
-                    if let Some(a) = args {
-                        entry = entry.with_arguments(a);
-                    }
-
-                    if !is_known && suspicious_score > 0 {
-                        entry = entry.mark_suspicious(
-                            format!("{}: {} -> {}", description, name, data),
-                            suspicious_score,
-                        );
-                    }
-
-                    entries.push(entry);
+                let (exe_path, args) = RegistryEntry::parse_command_line(&data);
+                if let Some(ref p) = exe_path {
+                    entry = entry.with_path(p);
                 }
+                if let Some(a) = args {
+                    entry = entry.with_arguments(a);
+                }
+
+                if !is_known && suspicious_score > 0 {
+                    entry = entry.mark_suspicious(
+                        format!("{}: {} -> {}", description, name, data),
+                        suspicious_score,
+                    );
+                }
+
+                entries.push(entry);
             }
         }
 
