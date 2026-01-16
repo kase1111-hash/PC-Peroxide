@@ -57,12 +57,12 @@ impl HtmlReporter {
                     crate::core::types::Severity::Low => "severity-low",
                 };
                 html.push_str(&format!(
-                    "<tr class=\"{}\"><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    "<tr class=\"{}\"><td>{:?}</td><td>{}</td><td><code>{}</code></td><td>{:?}</td></tr>\n",
                     severity_class,
-                    format!("{:?}", det.severity),
+                    det.severity,
                     Self::escape_html(&det.threat_name),
                     Self::escape_html(&det.path.display().to_string()),
-                    format!("{:?}", det.category)
+                    det.category
                 ));
             }
             html.push_str("</tbody>\n</table>");

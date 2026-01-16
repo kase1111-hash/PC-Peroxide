@@ -216,10 +216,11 @@ pub enum ThreatIntent {
     Benign,
 }
 
-impl ThreatIntent {
-    /// Parse intent from string.
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl std::str::FromStr for ThreatIntent {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "ransomware" => Self::Ransomware,
             "trojan" => Self::Trojan,
             "worm" => Self::Worm,
@@ -233,7 +234,7 @@ impl ThreatIntent {
             "pup" | "potentially unwanted" | "pua" => Self::PotentiallyUnwanted,
             "benign" | "clean" | "safe" => Self::Benign,
             _ => Self::Unknown,
-        }
+        })
     }
 }
 
@@ -375,10 +376,10 @@ mod tests {
 
     #[test]
     fn test_threat_intent_from_str() {
-        assert_eq!(ThreatIntent::from_str("ransomware"), ThreatIntent::Ransomware);
-        assert_eq!(ThreatIntent::from_str("TROJAN"), ThreatIntent::Trojan);
-        assert_eq!(ThreatIntent::from_str("benign"), ThreatIntent::Benign);
-        assert_eq!(ThreatIntent::from_str("unknown_type"), ThreatIntent::Unknown);
+        assert_eq!("ransomware".parse::<ThreatIntent>().unwrap(), ThreatIntent::Ransomware);
+        assert_eq!("TROJAN".parse::<ThreatIntent>().unwrap(), ThreatIntent::Trojan);
+        assert_eq!("benign".parse::<ThreatIntent>().unwrap(), ThreatIntent::Benign);
+        assert_eq!("unknown_type".parse::<ThreatIntent>().unwrap(), ThreatIntent::Unknown);
     }
 
     #[test]

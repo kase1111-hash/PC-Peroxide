@@ -335,15 +335,15 @@ impl SignatureDatabase {
         Ok(Signature {
             id: row.get(0)?,
             name: row.get(1)?,
-            sig_type: SignatureType::from_str(&sig_type_str).unwrap_or(SignatureType::Hash),
+            sig_type: SignatureType::parse(&sig_type_str).unwrap_or(SignatureType::Hash),
             hash_sha256: row.get(3)?,
             hash_md5: row.get(4)?,
             pattern: row.get(5)?,
             offset: row.get(6)?,
-            severity: Severity::from_str(&severity_str).unwrap_or(Severity::Medium),
-            category: ThreatCategory::from_str(&category_str).unwrap_or(ThreatCategory::Unknown),
+            severity: Severity::parse(&severity_str).unwrap_or(Severity::Medium),
+            category: ThreatCategory::parse(&category_str).unwrap_or(ThreatCategory::Unknown),
             description: row.get(9)?,
-            remediation: RemediationAction::from_str(&remediation_str)
+            remediation: RemediationAction::parse(&remediation_str)
                 .unwrap_or(RemediationAction::Quarantine),
             enabled: row.get::<_, i32>(11)? != 0,
             tags: Vec::new(), // Loaded separately

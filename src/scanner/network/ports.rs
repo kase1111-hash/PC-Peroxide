@@ -190,18 +190,13 @@ impl SuspiciousPortDetector {
 
         for (port, service, category, desc, severity) in c2_ports {
             // Don't overwrite well-known ports, but mark them as potentially suspicious
-            if !ports.contains_key(&port) {
-                ports.insert(
-                    port,
-                    KnownPort {
-                        service,
-                        category,
-                        description: desc,
-                        suspicious: true,
-                        severity,
-                    },
-                );
-            }
+            ports.entry(port).or_insert(KnownPort {
+                service,
+                category,
+                description: desc,
+                suspicious: true,
+                severity,
+            });
         }
     }
 
@@ -229,18 +224,13 @@ impl SuspiciousPortDetector {
         ];
 
         for (port, service, desc, severity) in backdoor_ports {
-            if !ports.contains_key(&port) {
-                ports.insert(
-                    port,
-                    KnownPort {
-                        service,
-                        category: PortCategory::Backdoor,
-                        description: desc,
-                        suspicious: true,
-                        severity,
-                    },
-                );
-            }
+            ports.entry(port).or_insert(KnownPort {
+                service,
+                category: PortCategory::Backdoor,
+                description: desc,
+                suspicious: true,
+                severity,
+            });
         }
     }
 
@@ -259,18 +249,13 @@ impl SuspiciousPortDetector {
         ];
 
         for (port, service, desc, severity) in miner_ports {
-            if !ports.contains_key(&port) {
-                ports.insert(
-                    port,
-                    KnownPort {
-                        service,
-                        category: PortCategory::Miner,
-                        description: desc,
-                        suspicious: true,
-                        severity,
-                    },
-                );
-            }
+            ports.entry(port).or_insert(KnownPort {
+                service,
+                category: PortCategory::Miner,
+                description: desc,
+                suspicious: true,
+                severity,
+            });
         }
     }
 
@@ -287,18 +272,13 @@ impl SuspiciousPortDetector {
         ];
 
         for (port, service, desc, severity) in proxy_ports {
-            if !ports.contains_key(&port) {
-                ports.insert(
-                    port,
-                    KnownPort {
-                        service,
-                        category: PortCategory::Proxy,
-                        description: desc,
-                        suspicious: true,
-                        severity,
-                    },
-                );
-            }
+            ports.entry(port).or_insert(KnownPort {
+                service,
+                category: PortCategory::Proxy,
+                description: desc,
+                suspicious: true,
+                severity,
+            });
         }
     }
 
@@ -329,7 +309,7 @@ impl SuspiciousPortDetector {
 
     /// Check if a port is in the known suspicious list.
     pub fn is_suspicious(&self, port: u16) -> bool {
-        self.known_ports.get(&port).map_or(false, |p| p.suspicious)
+        self.known_ports.get(&port).is_some_and(|p| p.suspicious)
     }
 
     /// Get all suspicious ports being listened on.

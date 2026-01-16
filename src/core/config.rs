@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Main configuration structure.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Scan-related settings
     pub scan: ScanConfig,
@@ -22,20 +22,6 @@ pub struct Config {
     /// LLM analysis settings
     #[serde(default)]
     pub llm: LlmConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            scan: ScanConfig::default(),
-            detection: DetectionConfig::default(),
-            actions: ActionConfig::default(),
-            updates: UpdateConfig::default(),
-            logging: LoggingConfig::default(),
-            quarantine: QuarantineConfig::default(),
-            llm: LlmConfig::default(),
-        }
-    }
 }
 
 impl Config {
@@ -412,7 +398,7 @@ impl LlmConfig {
     /// Create a provider config from this configuration.
     pub fn to_provider_config(&self) -> crate::analysis::ProviderConfig {
         crate::analysis::ProviderConfig {
-            provider: crate::analysis::LlmProvider::from_str(&self.provider),
+            provider: self.provider.parse().unwrap_or_default(),
             model: self.model.clone(),
             endpoint: self.endpoint.clone(),
             api_key: self.api_key.clone(),

@@ -110,7 +110,7 @@ impl Connection {
     /// Check if this is a loopback connection.
     pub fn is_loopback(&self) -> bool {
         self.local_addr.is_loopback()
-            || self.remote_addr.map_or(false, |a| a.is_loopback())
+            || self.remote_addr.is_some_and(|a| a.is_loopback())
     }
 
     /// Check if this is a listening socket.
@@ -330,6 +330,7 @@ impl ConnectionScanner {
                     return IpAddr::V6(Ipv6Addr::UNSPECIFIED);
                 }
                 let mut bytes = [0u8; 16];
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..16 {
                     // Linux stores IPv6 in 4-byte groups, each little-endian
                     let group = i / 4;

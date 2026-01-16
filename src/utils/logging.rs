@@ -176,14 +176,12 @@ pub fn cleanup_old_logs(log_dir: &PathBuf, keep_days: u32) -> Result<u32> {
     for entry in entries.flatten() {
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "log") {
+        if path.extension().is_some_and(|ext| ext == "log") {
             if let Ok(metadata) = entry.metadata() {
                 if let Ok(modified) = metadata.modified() {
-                    if modified < cutoff {
-                        if fs::remove_file(&path).is_ok() {
-                            log::debug!("Deleted old log file: {:?}", path);
-                            deleted += 1;
-                        }
+                    if modified < cutoff && fs::remove_file(&path).is_ok() {
+                        log::debug!("Deleted old log file: {:?}", path);
+                        deleted += 1;
                     }
                 }
             }

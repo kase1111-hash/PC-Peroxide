@@ -50,7 +50,7 @@ impl Severity {
     }
 
     /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "low" => Some(Severity::Low),
             "medium" => Some(Severity::Medium),
@@ -131,7 +131,7 @@ impl ThreatCategory {
     }
 
     /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "trojan" => Some(ThreatCategory::Trojan),
             "ransomware" => Some(ThreatCategory::Ransomware),

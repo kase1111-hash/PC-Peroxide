@@ -220,7 +220,7 @@ impl Condition {
                 matches.values().filter(|m| !m.is_empty()).count() >= *n
             }
             Condition::Pattern(id) => {
-                matches.get(id).map_or(false, |m| !m.is_empty())
+                matches.get(id).is_some_and(|m| !m.is_empty())
             }
             Condition::IsPE => {
                 data.len() >= 2 && data[0] == 0x4D && data[1] == 0x5A
@@ -230,8 +230,8 @@ impl Condition {
             }
             Condition::FileSize { min, max } => {
                 let size = data.len() as u64;
-                let min_ok = min.map_or(true, |m| size >= m);
-                let max_ok = max.map_or(true, |m| size <= m);
+                let min_ok = min.is_none_or(|m| size >= m);
+                let max_ok = max.is_none_or(|m| size <= m);
                 min_ok && max_ok
             }
             Condition::And(a, b) => {

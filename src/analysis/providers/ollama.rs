@@ -73,10 +73,8 @@ impl OllamaProvider {
         raw: &str,
         analysis_type: AnalysisType,
     ) -> (String, f32, Option<MalwareClassification>, Vec<MitreMapping>) {
-        let mut explanation = raw.to_string();
         let mut confidence = 0.5;
         let mut classification = None;
-        let mut mitre_mappings = Vec::new();
 
         // Try to extract structured data from the response
         let lower = raw.to_lowercase();
@@ -128,10 +126,10 @@ impl OllamaProvider {
         }
 
         // Extract MITRE ATT&CK references
-        mitre_mappings = self.extract_mitre_mappings(raw);
+        let mitre_mappings = self.extract_mitre_mappings(raw);
 
         // Clean up explanation
-        explanation = self.clean_explanation(raw);
+        let explanation = self.clean_explanation(raw);
 
         (explanation, confidence, classification, mitre_mappings)
     }
@@ -348,8 +346,10 @@ struct OllamaOptions {
 struct OllamaResponse {
     response: String,
     #[serde(default)]
+    #[allow(dead_code)]
     done: bool,
     #[serde(default)]
+    #[allow(dead_code)]
     total_duration: Option<u64>,
     #[serde(default)]
     eval_count: Option<usize>,
@@ -377,7 +377,7 @@ impl InferenceEngine for OllamaProvider {
         // Check if Ollama is running and has the model
         let result = self
             .client
-            .get(&self.tags_url())
+            .get(self.tags_url())
             .timeout(Duration::from_secs(5))
             .send()
             .await;
@@ -412,7 +412,7 @@ impl InferenceEngine for OllamaProvider {
 
         let response = self
             .client
-            .post(&self.generate_url())
+            .post(self.generate_url())
             .json(&ollama_request)
             .timeout(self.timeout)
             .send()

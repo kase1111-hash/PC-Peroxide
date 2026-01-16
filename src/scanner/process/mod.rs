@@ -333,7 +333,7 @@ impl ProcessScanner {
         for region in &regions {
             if region.protection.read && region.size < 10 * 1024 * 1024 {
                 // Only scan readable regions under 10MB
-                if let Ok(matches) = self.memory_scanner.scan_region(process.pid, region, &patterns) {
+                if let Ok(matches) = self.memory_scanner.scan_region(process.pid, region, patterns) {
                     for m in matches {
                         result.add_pattern_match(m);
                     }

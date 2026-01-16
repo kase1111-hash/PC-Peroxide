@@ -89,7 +89,6 @@ impl OpenAiProvider {
         let mut explanation = raw.to_string();
         let mut confidence = 0.5;
         let mut classification = None;
-        let mut mitre_mappings = Vec::new();
 
         let lower = raw.to_lowercase();
 
@@ -127,7 +126,7 @@ impl OpenAiProvider {
 
                         classification = Some(MalwareClassification {
                             is_malicious,
-                            intent: ThreatIntent::from_str(class_str),
+                            intent: class_str.parse().unwrap_or(ThreatIntent::Unknown),
                             family: parsed
                                 .get("family")
                                 .and_then(|v| v.as_str())
@@ -178,7 +177,7 @@ impl OpenAiProvider {
         }
 
         // Extract MITRE ATT&CK references
-        mitre_mappings = self.extract_mitre_mappings(raw);
+        let mitre_mappings = self.extract_mitre_mappings(raw);
 
         // Clean explanation
         if explanation.len() > 2000 {
@@ -351,12 +350,14 @@ struct ChatUsage {
 
 /// Models list response.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ModelsResponse {
     data: Vec<ModelInfo>,
 }
 
 /// Model info.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ModelInfo {
     id: String,
 }
@@ -370,7 +371,7 @@ impl InferenceEngine for OpenAiProvider {
     async fn is_available(&self) -> bool {
         let result = self
             .client
-            .get(&self.models_url())
+            .get(self.models_url())
             .header("Authorization", format!("Bearer {}", self.api_key))
             .timeout(Duration::from_secs(10))
             .send()
@@ -404,7 +405,7 @@ impl InferenceEngine for OpenAiProvider {
 
         let response = self
             .client
-            .post(&self.completions_url())
+            .post(self.completions_url())
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&chat_request)

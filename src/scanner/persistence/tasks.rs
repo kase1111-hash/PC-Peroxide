@@ -103,6 +103,7 @@ impl ScheduledTask {
         self.command.as_ref().map(|cmd| {
             let cmd = cmd.trim();
             // Handle quoted paths
+            #[allow(clippy::manual_strip)]
             if cmd.starts_with('"') {
                 if let Some(end) = cmd[1..].find('"') {
                     return PathBuf::from(&cmd[1..=end]);

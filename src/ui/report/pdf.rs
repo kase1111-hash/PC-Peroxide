@@ -115,9 +115,9 @@ impl PdfReporter {
         // Catalog (object 1)
         let pos = Self::file_position(file)?;
         obj_positions.push(pos);
-        objects.push(format!(
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        ));
+        objects.push(
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string()
+        );
         write!(file, "{}", objects.last().unwrap())?;
 
         // Pages (object 2)

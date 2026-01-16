@@ -66,7 +66,7 @@ impl NetworkScanner {
             let remote_port_info = conn.remote_port.map(|p| self.port_detector.analyze_port(p));
 
             let suspicious = port_info.suspicious
-                || remote_port_info.as_ref().map_or(false, |p| p.suspicious);
+                || remote_port_info.as_ref().is_some_and(|p| p.suspicious);
 
             let severity = std::cmp::max(
                 port_info.severity,
