@@ -52,6 +52,9 @@ dirs = "5.0"
 # Compression/archives
 zip = "0.6"
 
+# PE/ELF parsing
+goblin = "0.8"
+
 [target.'cfg(windows)'.dependencies]
 # Windows-specific APIs
 winreg = "0.52"
