@@ -12,6 +12,10 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    /// Silent mode - only return exit code (0 = clean, 1 = threats found, 2 = error)
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    pub silent: bool,
+
     /// Output format (text, json)
     #[arg(long, default_value = "text", global = true)]
     pub format: OutputFormat,
@@ -27,6 +31,19 @@ pub enum OutputFormat {
     Text,
     /// JSON output for machine processing
     Json,
+}
+
+/// Export format for reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ExportFormat {
+    /// JSON export
+    Json,
+    /// HTML report
+    Html,
+    /// CSV spreadsheet
+    Csv,
+    /// PDF report
+    Pdf,
 }
 
 /// Available commands.
@@ -49,6 +66,10 @@ pub enum Commands {
         /// Export results to file
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Export format (html, csv, pdf, json)
+        #[arg(long, default_value = "json")]
+        export_format: ExportFormat,
 
         /// Scan only, don't take any action
         #[arg(long)]
@@ -313,6 +334,20 @@ pub enum HistoryAction {
         id: String,
     },
 
+    /// Export a scan report
+    Export {
+        /// Scan ID to export (use "latest" for most recent)
+        id: String,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Export format
+        #[arg(short, long, default_value = "html")]
+        format: ExportFormat,
+    },
+
     /// Show aggregate statistics
     Stats,
 
@@ -344,9 +379,11 @@ mod tests {
         // Test that CLI can be constructed
         let cli = Cli {
             verbose: false,
+            silent: false,
             format: OutputFormat::Text,
             command: None,
         };
         assert!(!cli.verbose);
+        assert!(!cli.silent);
     }
 }
