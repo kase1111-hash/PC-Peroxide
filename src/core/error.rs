@@ -165,6 +165,12 @@ pub enum Error {
     JsonSerialize(#[from] serde_json::Error),
 
     // ===== Generic Errors =====
+    #[error("I/O error: {0}")]
+    Io(String),
+
+    #[error("Custom error: {0}")]
+    Custom(String),
+
     #[error("Operation not supported: {0}")]
     NotSupported(String),
 
@@ -173,6 +179,12 @@ pub enum Error {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::Io(err.to_string())
+    }
 }
 
 impl Error {

@@ -10,9 +10,10 @@ use pc_peroxide::scanner::{
     ScanResultStore,
 };
 use pc_peroxide::ui::cli::{
-    BrowserFilter, Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter,
-    QuarantineAction, WhitelistAction,
+    BrowserFilter, Cli, Commands, ConfigAction, ExportFormat, HistoryAction, OutputFormat,
+    PersistenceTypeFilter, QuarantineAction, WhitelistAction,
 };
+use pc_peroxide::ui::report::{generate_report, ReportFormat};
 use pc_peroxide::utils::logging::{init_logging, LogConfig};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -33,19 +34,22 @@ async fn run() -> Result<()> {
     // Parse command-line arguments
     let cli = Cli::parse_args();
 
-    // Initialize logging based on verbosity
-    let log_config = if cli.verbose {
-        LogConfig::verbose()
-    } else {
-        LogConfig::default()
-    };
-    init_logging(log_config)?;
-
-    log::info!("PC-Peroxide v{}", env!("CARGO_PKG_VERSION"));
+    // Initialize logging based on verbosity (skip if silent)
+    if !cli.silent {
+        let log_config = if cli.verbose {
+            LogConfig::verbose()
+        } else {
+            LogConfig::default()
+        };
+        init_logging(log_config)?;
+        log::info!("PC-Peroxide v{}", env!("CARGO_PKG_VERSION"));
+    }
 
     // Load configuration
     let config = Arc::new(Config::load_or_default());
-    log::debug!("Configuration loaded");
+    if !cli.silent {
+        log::debug!("Configuration loaded");
+    }
 
     // Handle commands
     match cli.command {
@@ -54,10 +58,11 @@ async fn run() -> Result<()> {
             full,
             path,
             output,
+            export_format,
             no_action,
             yara,
         }) => {
-            run_scan(config, quick, full, path, output, no_action, yara, cli.format).await
+            run_scan(config, quick, full, path, output, export_format, no_action, yara, cli.format, cli.silent).await
         }
         Some(Commands::Quarantine { action }) => run_quarantine(action, cli.format).await,
         Some(Commands::Update { force, import }) => run_update(force, import).await,
@@ -97,38 +102,77 @@ async fn run_scan(
     quick: bool,
     full: bool,
     path: Option<Vec<std::path::PathBuf>>,
-    _output: Option<std::path::PathBuf>,
+    output: Option<std::path::PathBuf>,
+    export_format: ExportFormat,
     _no_action: bool,
     _yara: Option<std::path::PathBuf>,
     format: OutputFormat,
+    silent: bool,
 ) -> Result<()> {
     let scanner = FileScanner::new(config);
 
     let summary = if quick {
-        log::info!("Starting quick scan...");
+        if !silent {
+            log::info!("Starting quick scan...");
+        }
         scanner.quick_scan().await?
     } else if full {
-        log::info!("Starting full system scan...");
+        if !silent {
+            log::info!("Starting full system scan...");
+        }
         scanner.full_scan().await?
     } else if let Some(paths) = path {
-        log::info!("Starting custom scan of {} path(s)...", paths.len());
+        if !silent {
+            log::info!("Starting custom scan of {} path(s)...", paths.len());
+        }
         scanner.custom_scan(paths).await?
     } else {
         // Default to quick scan
-        log::info!("Starting quick scan (default)...");
+        if !silent {
+            log::info!("Starting quick scan (default)...");
+        }
         scanner.quick_scan().await?
     };
 
     // Save scan results to database
     if let Ok(store) = ScanResultStore::open_default() {
         if let Err(e) = store.save_scan(&summary) {
-            log::warn!("Failed to save scan results: {}", e);
-        } else {
+            if !silent {
+                log::warn!("Failed to save scan results: {}", e);
+            }
+        } else if !silent {
             log::debug!("Scan results saved to database");
         }
     }
 
-    // Output results
+    // Export to file if requested
+    if let Some(output_path) = output {
+        let report_format = match export_format {
+            ExportFormat::Json => ReportFormat::Json,
+            ExportFormat::Html => ReportFormat::Html,
+            ExportFormat::Csv => ReportFormat::Csv,
+            ExportFormat::Pdf => ReportFormat::Pdf,
+        };
+        generate_report(&summary, report_format, &output_path)?;
+        if !silent {
+            println!("Report exported to: {}", output_path.display());
+        }
+    }
+
+    // Output results (unless silent)
+    if silent {
+        // In silent mode, return based on threats found
+        // Exit code is handled by caller based on Result
+        return if summary.threats_found > 0 {
+            Err(pc_peroxide::core::error::Error::Custom(format!(
+                "Threats found: {}",
+                summary.threats_found
+            )))
+        } else {
+            Ok(())
+        };
+    }
+
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&summary)?);
@@ -470,6 +514,37 @@ fn run_history(action: HistoryAction, format: OutputFormat) -> Result<()> {
                     println!("Total Threats Found: {}", stats.total_threats_found);
                     if let Some(last) = stats.last_scan_time {
                         println!("Last Scan:           {}", last);
+                    }
+                }
+            }
+        }
+
+        HistoryAction::Export { id, output, format: export_fmt } => {
+            // Get the scan to export
+            let scan = if id == "latest" {
+                // Get the most recent scan
+                let scans = store.get_recent_scans(1)?;
+                scans.into_iter().next()
+            } else {
+                store.load_scan(&id)?
+            };
+
+            match scan {
+                Some(summary) => {
+                    let report_format = match export_fmt {
+                        ExportFormat::Json => ReportFormat::Json,
+                        ExportFormat::Html => ReportFormat::Html,
+                        ExportFormat::Csv => ReportFormat::Csv,
+                        ExportFormat::Pdf => ReportFormat::Pdf,
+                    };
+                    generate_report(&summary, report_format, &output)?;
+                    println!("Report exported to: {}", output.display());
+                }
+                None => {
+                    if id == "latest" {
+                        println!("No scan history found.");
+                    } else {
+                        println!("Scan not found: {}", id);
                     }
                 }
             }
