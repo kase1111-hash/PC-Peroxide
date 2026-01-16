@@ -4,11 +4,13 @@
 
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
+use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{FileScanner, PersistenceScanner, ProcessScanner, ScanResultStore};
-use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter, QuarantineAction};
+use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter, QuarantineAction, WhitelistAction};
 use pc_peroxide::utils::logging::{init_logging, LogConfig};
 use std::process::ExitCode;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -59,6 +61,7 @@ async fn run() -> Result<()> {
         Some(Commands::Processes { all, pid, memory, threshold }) => {
             run_processes(all, pid, memory, threshold, cli.format)
         }
+        Some(Commands::Whitelist { action }) => run_whitelist(action, cli.format),
         Some(Commands::Info) => run_info(&config),
         None => {
             // No command specified, show help
@@ -184,27 +187,134 @@ fn format_duration(seconds: i64) -> String {
 }
 
 /// Manage quarantine.
-async fn run_quarantine(action: QuarantineAction, _format: OutputFormat) -> Result<()> {
+async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Result<()> {
+    let vault = QuarantineVault::open_default()?;
+
     match action {
         QuarantineAction::List => {
             log::info!("Listing quarantined items...");
-            // TODO: Implement in Phase 7
-            println!("Quarantine is empty.");
+            let items = vault.list()?;
+
+            if items.is_empty() {
+                println!("Quarantine is empty.");
+                return Ok(());
+            }
+
+            match format {
+                OutputFormat::Json => {
+                    let json_items: Vec<_> = items
+                        .iter()
+                        .map(|item| {
+                            serde_json::json!({
+                                "id": item.id,
+                                "original_path": item.original_path.display().to_string(),
+                                "detection_name": item.detection_name,
+                                "category": item.category,
+                                "severity": item.severity,
+                                "quarantine_time": item.quarantine_time.to_rfc3339(),
+                                "original_size": item.original_size,
+                                "hash": item.hash_sha256,
+                                "restorable": item.restorable,
+                            })
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&json_items)?);
+                }
+                OutputFormat::Text => {
+                    println!("=== Quarantined Items ===");
+                    println!("Total: {}", items.len());
+                    println!();
+
+                    for item in &items {
+                        let status = if item.restorable { "" } else { " [DELETED]" };
+                        println!("[{}]{}", item.severity, status);
+                        println!("  ID:        {}", item.id);
+                        println!("  Name:      {}", item.detection_name);
+                        println!("  Category:  {}", item.category);
+                        println!("  Path:      {}", item.original_path.display());
+                        println!("  Size:      {}", format_bytes(item.original_size));
+                        println!("  Time:      {}", item.quarantine_time.format("%Y-%m-%d %H:%M:%S"));
+                        println!();
+                    }
+                }
+            }
         }
-        QuarantineAction::Restore { id } => {
+
+        QuarantineAction::Restore { id, path } => {
             log::info!("Restoring item: {}", id);
-            // TODO: Implement in Phase 7
-            println!("Restore functionality not yet implemented.");
+
+            let result = if let Some(restore_path) = path {
+                vault.restore_to(&id, Some(&restore_path))
+            } else {
+                vault.restore(&id)
+            };
+
+            if result.success {
+                println!("Successfully restored: {}", result.restored_path.display());
+            } else {
+                let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+                eprintln!("Failed to restore: {}", error_msg);
+            }
         }
+
         QuarantineAction::Delete { id } => {
             log::info!("Deleting item: {}", id);
-            // TODO: Implement in Phase 7
-            println!("Delete functionality not yet implemented.");
+            vault.delete(&id)?;
+            println!("Deleted item: {}", id);
         }
-        QuarantineAction::Clear { yes: _ } => {
+
+        QuarantineAction::Clear { yes } => {
+            if !yes {
+                let count = vault.count()?;
+                if count == 0 {
+                    println!("Quarantine is already empty.");
+                    return Ok(());
+                }
+                println!("This will permanently delete {} quarantined item(s).", count);
+                println!("Use --yes to confirm.");
+                return Ok(());
+            }
+
             log::info!("Clearing quarantine...");
-            // TODO: Implement in Phase 7
-            println!("Clear functionality not yet implemented.");
+            let items = vault.list()?;
+            let mut deleted = 0;
+            for item in items {
+                if vault.delete(&item.id).is_ok() {
+                    deleted += 1;
+                }
+            }
+            println!("Deleted {} item(s) from quarantine.", deleted);
+        }
+
+        QuarantineAction::Stats => {
+            let stats = vault.stats()?;
+
+            match format {
+                OutputFormat::Json => {
+                    let json_stats = serde_json::json!({
+                        "total_count": stats.total_count,
+                        "total_original_size": stats.total_original_size,
+                        "vault_size": stats.vault_size,
+                        "categories": stats.categories,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&json_stats)?);
+                }
+                OutputFormat::Text => {
+                    println!("=== Quarantine Statistics ===");
+                    println!("Items:            {}", stats.total_count);
+                    println!("Original Size:    {}", format_bytes(stats.total_original_size));
+                    println!("Vault Size:       {}", format_bytes(stats.vault_size));
+                    println!("Vault Location:   {}", get_quarantine_path().display());
+
+                    if !stats.categories.is_empty() {
+                        println!();
+                        println!("By Category:");
+                        for (category, count) in &stats.categories {
+                            println!("  {}: {}", category, count);
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -644,6 +754,113 @@ fn run_processes(
             if suspicious_count > 0 {
                 println!("Warning: {} suspicious process(es) found!", suspicious_count);
                 println!("Review each process carefully before taking action.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Manage whitelist entries.
+fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
+    let whitelist_path = get_quarantine_path().join("whitelist.db");
+    let manager = WhitelistManager::open(&whitelist_path)?;
+
+    match action {
+        WhitelistAction::List => {
+            let entries = manager.list()?;
+
+            if entries.is_empty() {
+                println!("Whitelist is empty.");
+                return Ok(());
+            }
+
+            match format {
+                OutputFormat::Json => {
+                    let json_entries: Vec<_> = entries
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "id": e.id,
+                                "type": format!("{:?}", e.whitelist_type).to_lowercase(),
+                                "pattern": e.pattern,
+                                "reason": e.reason,
+                                "created_at": e.created_at.to_rfc3339(),
+                                "active": e.active,
+                            })
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&json_entries)?);
+                }
+                OutputFormat::Text => {
+                    println!("=== Whitelist Entries ===");
+                    println!("Total: {} ({} active)", entries.len(),
+                        entries.iter().filter(|e| e.active).count());
+                    println!();
+
+                    for entry in &entries {
+                        let status = if entry.active { "" } else { " [DISABLED]" };
+                        let type_str = match entry.whitelist_type {
+                            WhitelistType::Hash => "Hash",
+                            WhitelistType::Path => "Path",
+                            WhitelistType::Detection => "Detection",
+                        };
+                        println!("[{}]{}", type_str, status);
+                        println!("  ID:      {}", entry.id);
+                        println!("  Pattern: {}", entry.pattern);
+                        println!("  Reason:  {}", entry.reason);
+                        println!("  Created: {}", entry.created_at.format("%Y-%m-%d %H:%M:%S"));
+                        println!();
+                    }
+                }
+            }
+        }
+
+        WhitelistAction::AddHash { hash, reason } => {
+            let id = Uuid::new_v4().to_string();
+            let entry = WhitelistEntry::by_hash(id.clone(), hash.clone(), reason);
+            manager.add(&entry)?;
+            println!("Added hash to whitelist: {}", hash);
+            println!("Entry ID: {}", id);
+        }
+
+        WhitelistAction::AddPath { pattern, reason } => {
+            let id = Uuid::new_v4().to_string();
+            let entry = WhitelistEntry::by_path(id.clone(), pattern.clone(), reason);
+            manager.add(&entry)?;
+            println!("Added path pattern to whitelist: {}", pattern);
+            println!("Entry ID: {}", id);
+        }
+
+        WhitelistAction::AddDetection { pattern, reason } => {
+            let id = Uuid::new_v4().to_string();
+            let entry = WhitelistEntry::by_detection(id.clone(), pattern.clone(), reason);
+            manager.add(&entry)?;
+            println!("Added detection pattern to whitelist: {}", pattern);
+            println!("Entry ID: {}", id);
+        }
+
+        WhitelistAction::Remove { id } => {
+            if manager.remove(&id)? {
+                println!("Removed whitelist entry: {}", id);
+            } else {
+                println!("Entry not found: {}", id);
+            }
+        }
+
+        WhitelistAction::Disable { id } => {
+            if manager.disable(&id)? {
+                println!("Disabled whitelist entry: {}", id);
+            } else {
+                println!("Entry not found: {}", id);
+            }
+        }
+
+        WhitelistAction::Enable { id } => {
+            if manager.enable(&id)? {
+                println!("Enabled whitelist entry: {}", id);
+            } else {
+                println!("Entry not found: {}", id);
             }
         }
     }

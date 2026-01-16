@@ -118,6 +118,12 @@ pub enum Commands {
         threshold: u8,
     },
 
+    /// Manage file whitelist (exclude from detection)
+    Whitelist {
+        #[command(subcommand)]
+        action: WhitelistAction,
+    },
+
     /// Show application information
     Info,
 }
@@ -143,6 +149,10 @@ pub enum QuarantineAction {
     Restore {
         /// ID of item to restore
         id: String,
+
+        /// Restore to a different path
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     /// Delete a quarantined item permanently
@@ -156,6 +166,64 @@ pub enum QuarantineAction {
         /// Skip confirmation prompt
         #[arg(short, long)]
         yes: bool,
+    },
+
+    /// Show quarantine statistics
+    Stats,
+}
+
+/// Whitelist subcommands.
+#[derive(Subcommand, Debug)]
+pub enum WhitelistAction {
+    /// List whitelist entries
+    List,
+
+    /// Add a file hash to whitelist
+    AddHash {
+        /// SHA-256 hash of file to whitelist
+        hash: String,
+
+        /// Reason for whitelisting
+        #[arg(short, long, default_value = "User whitelist")]
+        reason: String,
+    },
+
+    /// Add a path pattern to whitelist
+    AddPath {
+        /// Path pattern (supports * and ? wildcards)
+        pattern: String,
+
+        /// Reason for whitelisting
+        #[arg(short, long, default_value = "User whitelist")]
+        reason: String,
+    },
+
+    /// Add a detection name pattern to whitelist
+    AddDetection {
+        /// Detection name pattern (supports * and ? wildcards)
+        pattern: String,
+
+        /// Reason for whitelisting
+        #[arg(short, long, default_value = "User whitelist")]
+        reason: String,
+    },
+
+    /// Remove a whitelist entry
+    Remove {
+        /// ID of whitelist entry to remove
+        id: String,
+    },
+
+    /// Disable a whitelist entry
+    Disable {
+        /// ID of whitelist entry to disable
+        id: String,
+    },
+
+    /// Enable a whitelist entry
+    Enable {
+        /// ID of whitelist entry to enable
+        id: String,
     },
 }
 

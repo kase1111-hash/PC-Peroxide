@@ -55,6 +55,10 @@ zip = "0.6"
 # PE/ELF parsing
 goblin = "0.8"
 
+# Encryption (for quarantine vault)
+aes-gcm = "0.10"
+rand = "0.8"
+
 [target.'cfg(windows)'.dependencies]
 # Windows-specific APIs
 winreg = "0.52"
