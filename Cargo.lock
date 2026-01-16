@@ -833,6 +833,7 @@ dependencies = [
  "log",
  "md-5",
  "rand",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

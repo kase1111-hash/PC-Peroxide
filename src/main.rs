@@ -5,8 +5,14 @@
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
-use pc_peroxide::scanner::{FileScanner, PersistenceScanner, ProcessScanner, ScanResultStore};
-use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter, QuarantineAction, WhitelistAction};
+use pc_peroxide::scanner::{
+    BrowserScanner, BrowserType, FileScanner, NetworkScanner, PersistenceScanner, ProcessScanner,
+    ScanResultStore,
+};
+use pc_peroxide::ui::cli::{
+    BrowserFilter, Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter,
+    QuarantineAction, WhitelistAction,
+};
 use pc_peroxide::utils::logging::{init_logging, LogConfig};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -62,6 +68,12 @@ async fn run() -> Result<()> {
             run_processes(all, pid, memory, threshold, cli.format)
         }
         Some(Commands::Whitelist { action }) => run_whitelist(action, cli.format),
+        Some(Commands::Network { all, listening, pid }) => {
+            run_network(all, listening, pid, cli.format)
+        }
+        Some(Commands::Browser { all, browser, hijacks_only }) => {
+            run_browser(all, browser, hijacks_only, cli.format)
+        }
         Some(Commands::Info) => run_info(&config),
         None => {
             // No command specified, show help
@@ -861,6 +873,287 @@ fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
                 println!("Enabled whitelist entry: {}", id);
             } else {
                 println!("Entry not found: {}", id);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan network connections for suspicious activity.
+fn run_network(
+    show_all: bool,
+    include_listening: bool,
+    specific_pid: Option<u32>,
+    format: OutputFormat,
+) -> Result<()> {
+    log::info!("Scanning network connections...");
+
+    let scanner = NetworkScanner::new()
+        .with_listening(include_listening)
+        .with_established(true);
+
+    let results = if let Some(pid) = specific_pid {
+        scanner.scan_pid(pid)?
+    } else if show_all {
+        scanner.scan_all()?
+    } else {
+        scanner.scan_suspicious()?
+    };
+
+    let suspicious_count = results.iter().filter(|r| r.suspicious).count();
+
+    match format {
+        OutputFormat::Json => {
+            let json_result = serde_json::json!({
+                "total_connections": results.len(),
+                "suspicious_count": suspicious_count,
+                "connections": results.iter().map(|r| {
+                    serde_json::json!({
+                        "type": format!("{}", r.connection.conn_type),
+                        "local_address": r.connection.local_addr.to_string(),
+                        "local_port": r.connection.local_port,
+                        "remote_address": r.connection.remote_addr.map(|a| a.to_string()),
+                        "remote_port": r.connection.remote_port,
+                        "state": format!("{}", r.connection.state),
+                        "pid": r.connection.pid,
+                        "process_name": r.connection.process_name.clone(),
+                        "suspicious": r.suspicious,
+                        "severity": r.severity,
+                        "local_port_category": format!("{:?}", r.local_port_info.category),
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&json_result)?);
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                if show_all {
+                    println!("No network connections found.");
+                } else {
+                    println!("No suspicious network connections found.");
+                    println!();
+                    println!("Use --all to show all connections.");
+                }
+                return Ok(());
+            }
+
+            let title = if show_all {
+                "=== All Network Connections ==="
+            } else {
+                "=== Suspicious Network Connections ==="
+            };
+
+            println!();
+            println!("{}", title);
+            println!("Total: {} ({} suspicious)", results.len(), suspicious_count);
+            println!();
+
+            println!("{:<6} {:<22} {:<22} {:>12} {:>8}",
+                "Proto", "Local Address", "Remote Address", "State", "PID");
+            println!("{}", "-".repeat(78));
+
+            for r in &results {
+                let conn = &r.connection;
+                let local = format!("{}:{}", conn.local_addr, conn.local_port);
+                let remote = match (conn.remote_addr, conn.remote_port) {
+                    (Some(addr), Some(port)) => format!("{}:{}", addr, port),
+                    _ => "*:*".to_string(),
+                };
+                let proto = format!("{}", conn.conn_type);
+                let state = format!("{}", conn.state);
+                let pid_str = conn.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
+
+                let suspicious_marker = if r.suspicious { "[!]" } else { "" };
+                println!("{:<6} {:<22} {:<22} {:>12} {:>8} {}",
+                    proto, local, remote, state, pid_str, suspicious_marker);
+
+                if let Some(ref name) = conn.process_name {
+                    println!("       Process: {}", name);
+                }
+
+                if r.suspicious {
+                    println!("       Port Category: {:?} (severity: {})",
+                        r.local_port_info.category, r.severity);
+                }
+            }
+
+            if suspicious_count > 0 {
+                println!();
+                println!("Warning: {} suspicious connection(s) detected!", suspicious_count);
+                println!("Review connections on these ports carefully.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan browser extensions and detect hijacks.
+fn run_browser(
+    show_all: bool,
+    browser_filter: Option<BrowserFilter>,
+    hijacks_only: bool,
+    format: OutputFormat,
+) -> Result<()> {
+    log::info!("Scanning browser extensions and settings...");
+
+    let scanner = BrowserScanner::new();
+
+    // Convert CLI filter to scanner BrowserType filter and scan
+    let result = match browser_filter {
+        Some(BrowserFilter::Chrome) => scanner.scan_browser(BrowserType::Chrome)?,
+        Some(BrowserFilter::Edge) => scanner.scan_browser(BrowserType::Edge)?,
+        Some(BrowserFilter::Firefox) => scanner.scan_browser(BrowserType::Firefox)?,
+        Some(BrowserFilter::Brave) => scanner.scan_browser(BrowserType::Brave)?,
+        Some(BrowserFilter::Opera) => scanner.scan_browser(BrowserType::Opera)?,
+        None => if show_all {
+            scanner.scan_all()?
+        } else {
+            scanner.scan_suspicious()?
+        },
+    };
+
+    match format {
+        OutputFormat::Json => {
+            let json_result = serde_json::json!({
+                "risk_score": result.risk_score,
+                "suspicious_extensions": result.suspicious_extensions,
+                "hijack_count": result.hijack_count,
+                "extensions": result.extensions.iter().map(|ext| {
+                    serde_json::json!({
+                        "id": ext.id,
+                        "name": ext.name,
+                        "version": ext.version,
+                        "description": ext.description,
+                        "browser": format!("{}", ext.browser),
+                        "enabled": ext.enabled,
+                        "risk": format!("{}", ext.risk),
+                        "risk_reasons": ext.risk_reasons,
+                        "permissions": ext.permissions.iter().map(|p| format!("{:?}", p)).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+                "hijacks": result.hijacks.iter().map(|h| {
+                    serde_json::json!({
+                        "browser": format!("{}", h.browser),
+                        "hijack_type": format!("{:?}", h.hijack_type),
+                        "current_value": h.current_value,
+                        "description": h.description,
+                        "severity": h.severity,
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&json_result)?);
+        }
+        OutputFormat::Text => {
+            // Show hijacks
+            if !result.hijacks.is_empty() {
+                println!();
+                println!("=== Browser Hijacks Detected ===");
+                println!("Total: {}", result.hijacks.len());
+                println!();
+
+                for hijack in &result.hijacks {
+                    println!("[{:?}] {:?} - Severity: {}",
+                        hijack.browser, hijack.hijack_type, hijack.severity);
+                    println!("  Value: {}", hijack.current_value);
+                    println!("  {}", hijack.description);
+                    println!();
+                }
+            }
+
+            if hijacks_only {
+                if result.hijacks.is_empty() {
+                    println!("No browser hijacks detected.");
+                }
+                return Ok(());
+            }
+
+            // Filter extensions
+            let extensions: Vec<_> = if show_all {
+                result.extensions
+            } else {
+                result
+                    .extensions
+                    .into_iter()
+                    .filter(|ext| {
+                        !matches!(ext.risk, pc_peroxide::scanner::ExtensionRisk::None)
+                    })
+                    .collect()
+            };
+
+            if extensions.is_empty() {
+                if show_all {
+                    println!("No browser extensions found.");
+                } else {
+                    println!("No suspicious browser extensions found.");
+                    println!();
+                    println!("Use --all to show all extensions.");
+                }
+            } else {
+                let title = if show_all {
+                    "=== All Browser Extensions ==="
+                } else {
+                    "=== Suspicious Browser Extensions ==="
+                };
+
+                println!();
+                println!("{}", title);
+                println!("Total: {} ({} suspicious)", extensions.len(), result.suspicious_extensions);
+                println!();
+
+                for ext in &extensions {
+                    let risk_str = match ext.risk {
+                        pc_peroxide::scanner::ExtensionRisk::None => "[OK]",
+                        pc_peroxide::scanner::ExtensionRisk::Low => "[LOW]",
+                        pc_peroxide::scanner::ExtensionRisk::Medium => "[MEDIUM]",
+                        pc_peroxide::scanner::ExtensionRisk::High => "[HIGH]",
+                        pc_peroxide::scanner::ExtensionRisk::Critical => "[CRITICAL]",
+                    };
+
+                    let status = if ext.enabled { "" } else { " (disabled)" };
+                    println!("{} {:?} - {}{}", risk_str, ext.browser, ext.name, status);
+                    println!("  ID:      {}", ext.id);
+                    println!("  Version: {}", ext.version);
+
+                    if let Some(ref desc_text) = ext.description {
+                        // Truncate long descriptions
+                        let desc = if desc_text.len() > 60 {
+                            format!("{}...", &desc_text[..60])
+                        } else {
+                            desc_text.clone()
+                        };
+                        println!("  Desc:    {}", desc);
+                    }
+
+                    if !ext.risk_reasons.is_empty() {
+                        for reason in &ext.risk_reasons {
+                            println!("  Risk:    {}", reason);
+                        }
+                    }
+
+                    if !ext.permissions.is_empty() {
+                        let perms: Vec<String> = ext.permissions.iter().take(5).map(|p| format!("{:?}", p)).collect();
+                        let more = if ext.permissions.len() > 5 {
+                            format!(" (+{} more)", ext.permissions.len() - 5)
+                        } else {
+                            String::new()
+                        };
+                        println!("  Perms:   {}{}", perms.join(", "), more);
+                    }
+
+                    println!();
+                }
+            }
+
+            // Summary
+            if result.hijack_count > 0 || result.suspicious_extensions > 0 {
+                println!("=== Summary ===");
+                println!("Risk Score:            {}/100", result.risk_score);
+                println!("Suspicious Extensions: {}", result.suspicious_extensions);
+                println!("Browser Hijacks:       {}", result.hijack_count);
+                println!();
+                println!("Warning: Review suspicious items carefully before taking action.");
             }
         }
     }

@@ -124,8 +124,53 @@ pub enum Commands {
         action: WhitelistAction,
     },
 
+    /// Scan network connections for suspicious activity
+    Network {
+        /// Show all connections, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Include listening sockets
+        #[arg(short, long)]
+        listening: bool,
+
+        /// Scan connections for a specific process (by PID)
+        #[arg(short, long)]
+        pid: Option<u32>,
+    },
+
+    /// Scan browser extensions and detect hijacks
+    Browser {
+        /// Show all extensions, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Scan a specific browser only
+        #[arg(short, long)]
+        browser: Option<BrowserFilter>,
+
+        /// Show hijack information only
+        #[arg(long)]
+        hijacks_only: bool,
+    },
+
     /// Show application information
     Info,
+}
+
+/// Browser filter for scanning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum BrowserFilter {
+    /// Google Chrome
+    Chrome,
+    /// Microsoft Edge
+    Edge,
+    /// Mozilla Firefox
+    Firefox,
+    /// Brave Browser
+    Brave,
+    /// Opera Browser
+    Opera,
 }
 
 /// Persistence scan type filter.
