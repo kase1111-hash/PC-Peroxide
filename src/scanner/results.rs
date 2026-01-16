@@ -42,7 +42,7 @@ impl ScanResultStore {
 
     /// Initialize the database schema.
     fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         conn.execute_batch(
             r#"
@@ -92,7 +92,7 @@ impl ScanResultStore {
 
     /// Save a scan summary and its detections.
     pub fn save_scan(&self, summary: &ScanSummary) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         // Insert or update scan summary
         conn.execute(
@@ -157,7 +157,7 @@ impl ScanResultStore {
 
     /// Load a scan summary by ID.
     pub fn load_scan(&self, scan_id: &str) -> Result<Option<ScanSummary>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let scan = conn
             .query_row(
@@ -235,7 +235,7 @@ impl ScanResultStore {
 
     /// Get recent scan history.
     pub fn get_recent_scans(&self, limit: usize) -> Result<Vec<ScanSummary>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let mut stmt = conn
             .prepare(
@@ -277,7 +277,7 @@ impl ScanResultStore {
 
     /// Get all detections from scan history matching a hash.
     pub fn find_by_hash(&self, sha256: &str) -> Result<Vec<Detection>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let mut stmt = conn
             .prepare(
@@ -311,7 +311,7 @@ impl ScanResultStore {
 
     /// Delete old scan records.
     pub fn cleanup_old_scans(&self, days_to_keep: u32) -> Result<u64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
         let cutoff = Utc::now().timestamp() - (days_to_keep as i64 * 24 * 60 * 60);
 
         let deleted = conn
@@ -326,7 +326,7 @@ impl ScanResultStore {
 
     /// Get total scan statistics.
     pub fn get_statistics(&self) -> Result<ScanStatistics> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let stats = conn
             .query_row(

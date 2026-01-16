@@ -150,6 +150,35 @@ pub enum Error {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
+    #[error("Network request timed out after {timeout_secs}s: {operation}")]
+    NetworkTimeout {
+        operation: String,
+        timeout_secs: u64,
+    },
+
+    #[error("Network request failed after {attempts} attempts: {operation}")]
+    NetworkRetryExhausted {
+        operation: String,
+        attempts: u32,
+        last_error: String,
+    },
+
+    // ===== LLM/Analysis Errors =====
+    #[error("LLM provider unavailable: {provider}")]
+    LlmUnavailable { provider: String },
+
+    #[error("LLM analysis failed: {reason}")]
+    LlmAnalysis { reason: String },
+
+    #[error("LLM request timed out: {provider}")]
+    LlmTimeout { provider: String },
+
+    #[error("LLM rate limited: retry after {retry_after_secs}s")]
+    LlmRateLimited { retry_after_secs: u64 },
+
+    #[error("LLM response parsing failed: {reason}")]
+    LlmParsing { reason: String },
+
     // ===== Detection Errors =====
     #[error("YARA rule compilation failed: {0}")]
     YaraCompilation(String),
@@ -159,6 +188,16 @@ pub enum Error {
 
     #[error("Heuristic analysis failed: {0}")]
     HeuristicError(String),
+
+    // ===== Concurrency Errors =====
+    #[error("Lock poisoned: {context}")]
+    LockPoisoned { context: String },
+
+    #[error("Channel send failed: {context}")]
+    ChannelSend { context: String },
+
+    #[error("Channel receive failed: {context}")]
+    ChannelRecv { context: String },
 
     // ===== Serialization Errors =====
     #[error("JSON serialization error")]
@@ -234,6 +273,212 @@ impl Error {
     /// Check if this error is a cancellation.
     pub fn is_cancelled(&self) -> bool {
         matches!(self, Error::ScanCancelled)
+    }
+
+    /// Create a lock poisoned error.
+    pub fn lock_poisoned(context: impl Into<String>) -> Self {
+        Self::LockPoisoned {
+            context: context.into(),
+        }
+    }
+
+    /// Create an LLM unavailable error.
+    pub fn llm_unavailable(provider: impl Into<String>) -> Self {
+        Self::LlmUnavailable {
+            provider: provider.into(),
+        }
+    }
+
+    /// Create an LLM analysis error.
+    pub fn llm_analysis(reason: impl Into<String>) -> Self {
+        Self::LlmAnalysis {
+            reason: reason.into(),
+        }
+    }
+
+    /// Create a network timeout error.
+    pub fn network_timeout(operation: impl Into<String>, timeout_secs: u64) -> Self {
+        Self::NetworkTimeout {
+            operation: operation.into(),
+            timeout_secs,
+        }
+    }
+
+    /// Create a network retry exhausted error.
+    pub fn network_retry_exhausted(
+        operation: impl Into<String>,
+        attempts: u32,
+        last_error: impl Into<String>,
+    ) -> Self {
+        Self::NetworkRetryExhausted {
+            operation: operation.into(),
+            attempts,
+            last_error: last_error.into(),
+        }
+    }
+
+    /// Check if this error is network-related and potentially retryable.
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            Error::Network(_)
+                | Error::NetworkTimeout { .. }
+                | Error::LlmTimeout { .. }
+                | Error::DownloadFailed { .. }
+        )
+    }
+
+    /// Check if this is an LLM-related error.
+    pub fn is_llm_error(&self) -> bool {
+        matches!(
+            self,
+            Error::LlmUnavailable { .. }
+                | Error::LlmAnalysis { .. }
+                | Error::LlmTimeout { .. }
+                | Error::LlmRateLimited { .. }
+                | Error::LlmParsing { .. }
+        )
+    }
+
+    /// Get a user-friendly suggestion for how to resolve this error.
+    pub fn suggestion(&self) -> Option<&'static str> {
+        match self {
+            Error::PermissionDenied { .. } => {
+                Some("Try running with elevated privileges (sudo/administrator)")
+            }
+            Error::PathNotFound(_) => Some("Check that the path exists and is accessible"),
+            Error::ConfigLoad(_) | Error::ConfigInvalid { .. } => {
+                Some("Check your configuration file for syntax errors or missing fields")
+            }
+            Error::DatabaseInit(_) | Error::Database(_) => {
+                Some("Try deleting the database file and letting it be recreated")
+            }
+            Error::LlmUnavailable { .. } => {
+                Some("Ensure the LLM server (Ollama) is running: ollama serve")
+            }
+            Error::LlmTimeout { .. } => {
+                Some("Try increasing the timeout in configuration or use a smaller model")
+            }
+            Error::LlmRateLimited { .. } => {
+                Some("Wait before retrying, or reduce request frequency")
+            }
+            Error::NetworkTimeout { .. } | Error::NetworkRetryExhausted { .. } => {
+                Some("Check your network connection and try again")
+            }
+            Error::LockPoisoned { .. } => {
+                Some("Internal error: restart the application")
+            }
+            Error::ScanCancelled => Some("Scan was interrupted by user request"),
+            Error::QuarantineItemNotFound(_) => {
+                Some("The quarantine item may have been deleted or restored")
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the error category for logging/metrics.
+    pub fn category(&self) -> ErrorCategory {
+        match self {
+            Error::FileRead { .. }
+            | Error::FileWrite { .. }
+            | Error::FileDelete { .. }
+            | Error::DirectoryAccess { .. }
+            | Error::PathNotFound(_)
+            | Error::PermissionDenied { .. }
+            | Error::Io(_) => ErrorCategory::Io,
+
+            Error::ConfigLoad(_) | Error::ConfigSave(_) | Error::ConfigInvalid { .. } => {
+                ErrorCategory::Configuration
+            }
+
+            Error::DatabaseSql(_)
+            | Error::Database(_)
+            | Error::DatabaseInit(_)
+            | Error::SignatureNotFound(_)
+            | Error::SignatureLoad(_) => ErrorCategory::Database,
+
+            Error::ScanCancelled
+            | Error::ScanTimeout
+            | Error::ScanError { .. }
+            | Error::ArchiveError { .. } => ErrorCategory::Scanning,
+
+            Error::QuarantineFailed { .. }
+            | Error::RestoreFailed { .. }
+            | Error::QuarantineItemNotFound(_)
+            | Error::Encryption(_)
+            | Error::Decryption(_) => ErrorCategory::Quarantine,
+
+            Error::ProcessEnumeration(_)
+            | Error::ProcessTermination { .. }
+            | Error::ProcessNotFound(_) => ErrorCategory::Process,
+
+            Error::RegistryAccess { .. } | Error::RegistryKeyNotFound(_) => ErrorCategory::Registry,
+
+            Error::Network(_)
+            | Error::UpdateFailed(_)
+            | Error::DownloadFailed { .. }
+            | Error::NetworkTimeout { .. }
+            | Error::NetworkRetryExhausted { .. } => ErrorCategory::Network,
+
+            Error::LlmUnavailable { .. }
+            | Error::LlmAnalysis { .. }
+            | Error::LlmTimeout { .. }
+            | Error::LlmRateLimited { .. }
+            | Error::LlmParsing { .. } => ErrorCategory::Llm,
+
+            Error::YaraCompilation(_) | Error::YaraScan(_) | Error::HeuristicError(_) => {
+                ErrorCategory::Detection
+            }
+
+            Error::LockPoisoned { .. }
+            | Error::ChannelSend { .. }
+            | Error::ChannelRecv { .. } => ErrorCategory::Concurrency,
+
+            Error::JsonSerialize(_) => ErrorCategory::Serialization,
+
+            Error::Custom(_)
+            | Error::NotSupported(_)
+            | Error::Internal(_)
+            | Error::Other(_) => ErrorCategory::Other,
+        }
+    }
+}
+
+/// Error category for classification and metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorCategory {
+    Io,
+    Configuration,
+    Database,
+    Scanning,
+    Quarantine,
+    Process,
+    Registry,
+    Network,
+    Llm,
+    Detection,
+    Concurrency,
+    Serialization,
+    Other,
+}
+
+impl std::fmt::Display for ErrorCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io => write!(f, "I/O"),
+            Self::Configuration => write!(f, "Configuration"),
+            Self::Database => write!(f, "Database"),
+            Self::Scanning => write!(f, "Scanning"),
+            Self::Quarantine => write!(f, "Quarantine"),
+            Self::Process => write!(f, "Process"),
+            Self::Registry => write!(f, "Registry"),
+            Self::Network => write!(f, "Network"),
+            Self::Llm => write!(f, "LLM Analysis"),
+            Self::Detection => write!(f, "Detection"),
+            Self::Concurrency => write!(f, "Concurrency"),
+            Self::Serialization => write!(f, "Serialization"),
+            Self::Other => write!(f, "Other"),
+        }
     }
 }
 

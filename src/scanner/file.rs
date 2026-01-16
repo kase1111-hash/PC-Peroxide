@@ -242,14 +242,20 @@ impl FileScanner {
 
             if path.is_file() {
                 if let Ok(metadata) = path.metadata() {
-                    file_queue.lock().unwrap().push_back((path.clone(), metadata.len()));
+                    file_queue
+                        .lock()
+                        .map_err(|_| Error::lock_poisoned("file queue (add file)"))?
+                        .push_back((path.clone(), metadata.len()));
                 }
             } else if path.is_dir() {
                 self.collect_files(path, &file_queue)?;
             }
         }
 
-        let total_files = file_queue.lock().unwrap().len() as u64;
+        let total_files = file_queue
+            .lock()
+            .map_err(|_| Error::lock_poisoned("file queue (count)"))?
+            .len() as u64;
         log::info!("Found {} files to scan", total_files);
 
         // Set up channels for results
@@ -270,8 +276,13 @@ impl FileScanner {
                 loop {
                     // Get next file from queue
                     let item = {
-                        let mut q = queue.lock().unwrap();
-                        q.pop_front()
+                        match queue.lock() {
+                            Ok(mut q) => q.pop_front(),
+                            Err(_) => {
+                                log::error!("File queue lock poisoned in worker");
+                                break;
+                            }
+                        }
                     };
 
                     let (path, size) = match item {
@@ -400,7 +411,11 @@ impl FileScanner {
                 continue;
             }
 
-            queue.lock().unwrap().push_back((file_path.to_path_buf(), size));
+            if let Ok(mut q) = queue.lock() {
+                q.push_back((file_path.to_path_buf(), size));
+            } else {
+                return Err(Error::lock_poisoned("file queue (collect)"));
+            }
         }
 
         Ok(())

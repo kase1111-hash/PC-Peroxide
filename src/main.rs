@@ -4,6 +4,7 @@
 
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
+use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
 use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, FileScanner, NetworkScanner, PersistenceScanner, ProcessScanner,
@@ -24,8 +25,14 @@ async fn main() -> ExitCode {
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("Error: {}", e);
-            ExitCode::FAILURE
+            let report = create_cli_error_report(&e);
+            eprintln!("{}", report);
+
+            // Log full error details for debugging
+            log::error!("Fatal error: {:?}", e);
+
+            // Use category-specific exit code
+            ExitCode::from(error_to_exit_code(&e) as u8)
         }
     }
 }
