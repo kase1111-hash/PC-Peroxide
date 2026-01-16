@@ -99,6 +99,25 @@ pub enum Commands {
         r#type: Option<PersistenceTypeFilter>,
     },
 
+    /// Scan running processes for suspicious activity
+    Processes {
+        /// Show all processes, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Scan a specific process by PID
+        #[arg(short, long)]
+        pid: Option<u32>,
+
+        /// Enable memory scanning (requires elevated privileges)
+        #[arg(short, long)]
+        memory: bool,
+
+        /// Minimum suspicion score to report (0-100)
+        #[arg(long, default_value = "30")]
+        threshold: u8,
+    },
+
     /// Show application information
     Info,
 }

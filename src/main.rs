@@ -4,7 +4,7 @@
 
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
-use pc_peroxide::scanner::{FileScanner, PersistenceScanner, ScanResultStore};
+use pc_peroxide::scanner::{FileScanner, PersistenceScanner, ProcessScanner, ScanResultStore};
 use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter, QuarantineAction};
 use pc_peroxide::utils::logging::{init_logging, LogConfig};
 use std::process::ExitCode;
@@ -56,6 +56,9 @@ async fn run() -> Result<()> {
         Some(Commands::Config { action }) => run_config(action, &config),
         Some(Commands::History { action }) => run_history(action, cli.format),
         Some(Commands::Persistence { all, r#type }) => run_persistence(all, r#type, cli.format),
+        Some(Commands::Processes { all, pid, memory, threshold }) => {
+            run_processes(all, pid, memory, threshold, cli.format)
+        }
         Some(Commands::Info) => run_info(&config),
         None => {
             // No command specified, show help
@@ -501,6 +504,146 @@ fn run_persistence(
             if suspicious_count > 0 {
                 println!("Warning: {} suspicious persistence mechanism(s) found!", suspicious_count);
                 println!("Review each entry carefully before taking action.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan running processes for suspicious activity.
+fn run_processes(
+    show_all: bool,
+    specific_pid: Option<u32>,
+    scan_memory: bool,
+    threshold: u8,
+    format: OutputFormat,
+) -> Result<()> {
+    log::info!("Scanning processes...");
+
+    let scanner = ProcessScanner::new()
+        .with_memory_scan(scan_memory)
+        .with_threshold(threshold);
+
+    let results = if let Some(pid) = specific_pid {
+        // Scan specific process
+        match scanner.scan_pid(pid)? {
+            Some(result) => vec![result],
+            None => {
+                println!("Process not found: PID {}", pid);
+                return Ok(());
+            }
+        }
+    } else if show_all {
+        scanner.scan_all()?
+    } else {
+        scanner.scan_suspicious()?
+    };
+
+    match format {
+        OutputFormat::Json => {
+            let json_results: Vec<_> = results
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "pid": r.pid,
+                        "name": r.name,
+                        "path": r.path.as_ref().map(|p| p.display().to_string()),
+                        "suspicious": r.suspicious,
+                        "score": r.score,
+                        "indicators": r.indicators.iter().map(|i| {
+                            serde_json::json!({
+                                "name": i.name,
+                                "description": i.description,
+                                "severity": i.severity,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "pattern_matches": r.pattern_matches.iter().map(|m| {
+                            serde_json::json!({
+                                "pattern": m.pattern_name,
+                                "address": format!("0x{:x}", m.address),
+                                "description": m.description,
+                                "severity": m.severity,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "memory_stats": {
+                            "virtual_size": r.memory_stats.virtual_size,
+                            "executable_regions": r.memory_stats.executable_regions,
+                            "rwx_regions": r.memory_stats.rwx_regions,
+                        }
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_results)?);
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                if show_all {
+                    println!("No processes found.");
+                } else {
+                    println!("No suspicious processes found (threshold: {}).", threshold);
+                    println!();
+                    println!("Use --all to show all processes, or --threshold to adjust sensitivity.");
+                }
+                return Ok(());
+            }
+
+            let suspicious_count = results.iter().filter(|r| r.suspicious).count();
+            let title = if show_all {
+                "=== All Processes ==="
+            } else {
+                "=== Suspicious Processes ==="
+            };
+
+            println!();
+            println!("{}", title);
+            println!("Total: {} ({} suspicious)", results.len(), suspicious_count);
+            println!();
+
+            for result in &results {
+                let status = if result.suspicious {
+                    format!("[SUSPICIOUS - Score: {}]", result.score)
+                } else {
+                    format!("[OK - Score: {}]", result.score)
+                };
+
+                println!("{} PID {} - {}", status, result.pid, result.name);
+
+                if let Some(ref path) = result.path {
+                    println!("  Path: {}", path.display());
+                }
+
+                if !result.indicators.is_empty() {
+                    println!("  Indicators:");
+                    for indicator in &result.indicators {
+                        println!("    - {} (severity: {})", indicator.name, indicator.severity);
+                        if !indicator.description.is_empty() {
+                            println!("      {}", indicator.description);
+                        }
+                    }
+                }
+
+                if !result.pattern_matches.is_empty() {
+                    println!("  Memory Pattern Matches:");
+                    for m in &result.pattern_matches {
+                        println!("    - {} at 0x{:x} (severity: {})", m.pattern_name, m.address, m.severity);
+                    }
+                }
+
+                if result.memory_stats.region_count > 0 {
+                    println!("  Memory: {} regions, {} executable, {} RWX",
+                        result.memory_stats.region_count,
+                        result.memory_stats.executable_regions,
+                        result.memory_stats.rwx_regions
+                    );
+                }
+
+                println!();
+            }
+
+            if suspicious_count > 0 {
+                println!("Warning: {} suspicious process(es) found!", suspicious_count);
+                println!("Review each process carefully before taking action.");
             }
         }
     }
