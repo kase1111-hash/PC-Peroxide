@@ -201,7 +201,11 @@ fn create_eicar_signature() -> Signature {
 /// High-level detection engine combining all detection methods.
 pub struct DetectionEngine {
     hash_matcher: HashMatcher,
-    // Future: heuristic_engine, yara_engine, etc.
+    heuristic_engine: crate::detection::heuristic::HeuristicEngine,
+    /// Heuristic score threshold for detection (0-100)
+    heuristic_threshold: u8,
+    /// Whether heuristic analysis is enabled
+    heuristic_enabled: bool,
 }
 
 impl DetectionEngine {
@@ -209,19 +213,77 @@ impl DetectionEngine {
     pub fn new(db: Arc<SignatureDatabase>) -> Self {
         Self {
             hash_matcher: HashMatcher::new(db),
+            heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
+            heuristic_threshold: 50,
+            heuristic_enabled: true,
         }
     }
 
-    /// Scan a file for threats.
-    pub fn scan_file(&self, path: &Path) -> Result<Option<Detection>> {
-        // Phase 2: Hash-based detection only
-        // Future phases will add heuristic, YARA, behavioral detection
+    /// Create a detection engine with custom settings.
+    pub fn with_settings(
+        db: Arc<SignatureDatabase>,
+        heuristic_threshold: u8,
+        heuristic_enabled: bool,
+    ) -> Self {
+        Self {
+            hash_matcher: HashMatcher::new(db),
+            heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
+            heuristic_threshold,
+            heuristic_enabled,
+        }
+    }
 
+    /// Enable or disable heuristic analysis.
+    pub fn set_heuristic_enabled(&mut self, enabled: bool) {
+        self.heuristic_enabled = enabled;
+    }
+
+    /// Set the heuristic detection threshold.
+    pub fn set_heuristic_threshold(&mut self, threshold: u8) {
+        self.heuristic_threshold = threshold;
+    }
+
+    /// Scan a file for threats using all detection methods.
+    pub fn scan_file(&self, path: &Path) -> Result<Option<Detection>> {
+        // 1. Hash-based detection (fastest, check first)
         if let Some(match_result) = self.hash_matcher.match_file(path)? {
             return Ok(Some(match_result.to_detection(path)));
         }
 
+        // 2. Heuristic analysis (if enabled)
+        if self.heuristic_enabled {
+            if let Ok(heuristic_result) = self.heuristic_engine.analyze_file(path) {
+                if let Some(detection) = self
+                    .heuristic_engine
+                    .to_detection(&heuristic_result, self.heuristic_threshold)
+                {
+                    return Ok(Some(detection));
+                }
+            }
+        }
+
+        // 3. Future: YARA rules, behavioral analysis
+
         Ok(None)
+    }
+
+    /// Scan file with detailed results from all engines.
+    pub fn scan_file_detailed(&self, path: &Path) -> Result<ScanDetails> {
+        let mut details = ScanDetails::new(path.to_path_buf());
+
+        // Hash-based detection
+        if let Some(match_result) = self.hash_matcher.match_file(path)? {
+            details.signature_match = Some(match_result);
+        }
+
+        // Heuristic analysis
+        if self.heuristic_enabled {
+            if let Ok(heuristic_result) = self.heuristic_engine.analyze_file(path) {
+                details.heuristic_result = Some(heuristic_result);
+            }
+        }
+
+        Ok(details)
     }
 
     /// Quick check if a file might be malicious (hash only).
@@ -233,6 +295,62 @@ impl DetectionEngine {
     /// Get the underlying hash matcher.
     pub fn hash_matcher(&self) -> &HashMatcher {
         &self.hash_matcher
+    }
+
+    /// Get the heuristic engine.
+    pub fn heuristic_engine(&self) -> &crate::detection::heuristic::HeuristicEngine {
+        &self.heuristic_engine
+    }
+}
+
+/// Detailed scan results from all detection engines.
+#[derive(Debug)]
+pub struct ScanDetails {
+    /// File path scanned
+    pub path: std::path::PathBuf,
+    /// Signature match result
+    pub signature_match: Option<MatchResult>,
+    /// Heuristic analysis result
+    pub heuristic_result: Option<crate::detection::heuristic::HeuristicResult>,
+}
+
+impl ScanDetails {
+    /// Create new scan details.
+    pub fn new(path: std::path::PathBuf) -> Self {
+        Self {
+            path,
+            signature_match: None,
+            heuristic_result: None,
+        }
+    }
+
+    /// Check if any detection method found a threat.
+    pub fn has_detection(&self, heuristic_threshold: u8) -> bool {
+        if self.signature_match.is_some() {
+            return true;
+        }
+        if let Some(ref heuristic) = self.heuristic_result {
+            return heuristic.score >= heuristic_threshold;
+        }
+        false
+    }
+
+    /// Get the primary detection (signature takes priority).
+    pub fn primary_detection(&self, heuristic_threshold: u8) -> Option<Detection> {
+        // Signature matches take priority
+        if let Some(ref match_result) = self.signature_match {
+            return Some(match_result.to_detection(&self.path));
+        }
+
+        // Then heuristic
+        if let Some(ref heuristic) = self.heuristic_result {
+            if heuristic.score >= heuristic_threshold {
+                let engine = crate::detection::heuristic::HeuristicEngine::new();
+                return engine.to_detection(heuristic, heuristic_threshold);
+            }
+        }
+
+        None
     }
 }
 

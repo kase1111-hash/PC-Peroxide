@@ -82,8 +82,55 @@ pub enum Commands {
         action: ConfigAction,
     },
 
+    /// View scan history and statistics
+    History {
+        #[command(subcommand)]
+        action: HistoryAction,
+    },
+
+    /// Scan for persistence mechanisms (autorun entries, services, scheduled tasks)
+    Persistence {
+        /// Show all entries, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Scan specific type only (registry, startup, tasks)
+        #[arg(short, long)]
+        r#type: Option<PersistenceTypeFilter>,
+    },
+
+    /// Scan running processes for suspicious activity
+    Processes {
+        /// Show all processes, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Scan a specific process by PID
+        #[arg(short, long)]
+        pid: Option<u32>,
+
+        /// Enable memory scanning (requires elevated privileges)
+        #[arg(short, long)]
+        memory: bool,
+
+        /// Minimum suspicion score to report (0-100)
+        #[arg(long, default_value = "30")]
+        threshold: u8,
+    },
+
     /// Show application information
     Info,
+}
+
+/// Persistence scan type filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum PersistenceTypeFilter {
+    /// Registry autorun locations
+    Registry,
+    /// Startup folders
+    Startup,
+    /// Scheduled tasks
+    Tasks,
 }
 
 /// Quarantine subcommands.
@@ -135,6 +182,37 @@ pub enum ConfigAction {
 
     /// Open configuration file location
     Path,
+}
+
+/// History subcommands.
+#[derive(Subcommand, Debug)]
+pub enum HistoryAction {
+    /// Show recent scan history
+    List {
+        /// Number of recent scans to show
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
+    },
+
+    /// Show details of a specific scan
+    Show {
+        /// Scan ID to show details for
+        id: String,
+    },
+
+    /// Show aggregate statistics
+    Stats,
+
+    /// Clear old scan history
+    Clear {
+        /// Days of history to keep
+        #[arg(short, long, default_value = "30")]
+        days: u32,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 impl Cli {
