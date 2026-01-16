@@ -82,6 +82,12 @@ pub enum Commands {
         action: ConfigAction,
     },
 
+    /// View scan history and statistics
+    History {
+        #[command(subcommand)]
+        action: HistoryAction,
+    },
+
     /// Show application information
     Info,
 }
@@ -135,6 +141,37 @@ pub enum ConfigAction {
 
     /// Open configuration file location
     Path,
+}
+
+/// History subcommands.
+#[derive(Subcommand, Debug)]
+pub enum HistoryAction {
+    /// Show recent scan history
+    List {
+        /// Number of recent scans to show
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
+    },
+
+    /// Show details of a specific scan
+    Show {
+        /// Scan ID to show details for
+        id: String,
+    },
+
+    /// Show aggregate statistics
+    Stats,
+
+    /// Clear old scan history
+    Clear {
+        /// Days of history to keep
+        #[arg(short, long, default_value = "30")]
+        days: u32,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 impl Cli {
