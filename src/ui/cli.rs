@@ -88,8 +88,30 @@ pub enum Commands {
         action: HistoryAction,
     },
 
+    /// Scan for persistence mechanisms (autorun entries, services, scheduled tasks)
+    Persistence {
+        /// Show all entries, not just suspicious ones
+        #[arg(short, long)]
+        all: bool,
+
+        /// Scan specific type only (registry, startup, tasks)
+        #[arg(short, long)]
+        r#type: Option<PersistenceTypeFilter>,
+    },
+
     /// Show application information
     Info,
+}
+
+/// Persistence scan type filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum PersistenceTypeFilter {
+    /// Registry autorun locations
+    Registry,
+    /// Startup folders
+    Startup,
+    /// Scheduled tasks
+    Tasks,
 }
 
 /// Quarantine subcommands.

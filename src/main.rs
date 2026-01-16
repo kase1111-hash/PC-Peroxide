@@ -4,8 +4,8 @@
 
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
-use pc_peroxide::scanner::{FileScanner, ScanResultStore};
-use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, QuarantineAction};
+use pc_peroxide::scanner::{FileScanner, PersistenceScanner, ScanResultStore};
+use pc_peroxide::ui::cli::{Cli, Commands, ConfigAction, HistoryAction, OutputFormat, PersistenceTypeFilter, QuarantineAction};
 use pc_peroxide::utils::logging::{init_logging, LogConfig};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -55,6 +55,7 @@ async fn run() -> Result<()> {
         Some(Commands::Update { force, import }) => run_update(force, import).await,
         Some(Commands::Config { action }) => run_config(action, &config),
         Some(Commands::History { action }) => run_history(action, cli.format),
+        Some(Commands::Persistence { all, r#type }) => run_persistence(all, r#type, cli.format),
         Some(Commands::Info) => run_info(&config),
         None => {
             // No command specified, show help
@@ -383,5 +384,126 @@ fn run_info(config: &Config) -> Result<()> {
     println!("  Max File Size:  {} MB", config.scan.skip_large_files_mb);
     println!("  Scan Archives:  {}", config.scan.scan_archives);
     println!("  Threads:        {}", config.scan.scan_threads);
+    Ok(())
+}
+
+/// Scan for persistence mechanisms.
+fn run_persistence(
+    show_all: bool,
+    type_filter: Option<PersistenceTypeFilter>,
+    format: OutputFormat,
+) -> Result<()> {
+    log::info!("Scanning for persistence mechanisms...");
+    let scanner = PersistenceScanner::new();
+
+    let entries = if show_all {
+        scanner.scan_all()?
+    } else {
+        scanner.scan_suspicious()?
+    };
+
+    // Filter by type if specified
+    let entries: Vec<_> = match type_filter {
+        Some(PersistenceTypeFilter::Registry) => entries
+            .into_iter()
+            .filter(|e| matches!(
+                e.persistence_type,
+                pc_peroxide::scanner::PersistenceType::RegistryRun
+                    | pc_peroxide::scanner::PersistenceType::Service
+                    | pc_peroxide::scanner::PersistenceType::Ifeo
+                    | pc_peroxide::scanner::PersistenceType::AppInitDll
+                    | pc_peroxide::scanner::PersistenceType::ShellExtension
+                    | pc_peroxide::scanner::PersistenceType::Winlogon
+                    | pc_peroxide::scanner::PersistenceType::LsaPackage
+            ))
+            .collect(),
+        Some(PersistenceTypeFilter::Startup) => entries
+            .into_iter()
+            .filter(|e| e.persistence_type == pc_peroxide::scanner::PersistenceType::StartupFolder)
+            .collect(),
+        Some(PersistenceTypeFilter::Tasks) => entries
+            .into_iter()
+            .filter(|e| e.persistence_type == pc_peroxide::scanner::PersistenceType::ScheduledTask)
+            .collect(),
+        None => entries,
+    };
+
+    match format {
+        OutputFormat::Json => {
+            let json_entries: Vec<_> = entries
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "type": format!("{}", e.persistence_type),
+                        "name": e.name,
+                        "location": e.location,
+                        "path": e.path.as_ref().map(|p| p.display().to_string()),
+                        "arguments": e.arguments,
+                        "file_exists": e.file_exists,
+                        "suspicious": e.suspicious,
+                        "suspicion_reason": e.suspicion_reason,
+                        "severity_score": e.severity_score,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_entries)?);
+        }
+        OutputFormat::Text => {
+            if entries.is_empty() {
+                if show_all {
+                    println!("No persistence entries found.");
+                } else {
+                    println!("No suspicious persistence entries found.");
+                    println!();
+                    println!("Use --all to show all entries.");
+                }
+                return Ok(());
+            }
+
+            let suspicious_count = entries.iter().filter(|e| e.suspicious).count();
+            let title = if show_all {
+                "=== All Persistence Entries ==="
+            } else {
+                "=== Suspicious Persistence Entries ==="
+            };
+
+            println!();
+            println!("{}", title);
+            println!("Total: {} ({} suspicious)", entries.len(), suspicious_count);
+            println!();
+
+            for entry in &entries {
+                let status = if entry.suspicious {
+                    format!("[SUSPICIOUS - Score: {}]", entry.severity_score)
+                } else {
+                    "[OK]".to_string()
+                };
+
+                println!("{} {} - {}", status, entry.persistence_type, entry.name);
+                println!("  Location: {}", entry.location);
+
+                if let Some(ref path) = entry.path {
+                    let exists = if entry.file_exists { "exists" } else { "MISSING" };
+                    println!("  Path: {} ({})", path.display(), exists);
+                }
+
+                if let Some(ref args) = entry.arguments {
+                    println!("  Arguments: {}", args);
+                }
+
+                if let Some(ref reason) = entry.suspicion_reason {
+                    println!("  Reason: {}", reason);
+                }
+
+                println!();
+            }
+
+            if suspicious_count > 0 {
+                println!("Warning: {} suspicious persistence mechanism(s) found!", suspicious_count);
+                println!("Review each entry carefully before taking action.");
+            }
+        }
+    }
+
     Ok(())
 }
