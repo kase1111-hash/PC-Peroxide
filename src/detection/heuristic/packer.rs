@@ -82,7 +82,7 @@ impl PackerDetector {
     /// Default packer signatures.
     fn default_signatures() -> Vec<PackerSignature> {
         vec![
-            // UPX
+            // UPX - legitimate open-source packer, commonly used
             PackerSignature {
                 name: "UPX",
                 patterns: &[
@@ -107,7 +107,7 @@ impl PackerDetector {
                     },
                 ],
                 section_names: &["UPX0", "UPX1", "UPX2", ".UPX"],
-                suspicion_score: 15,
+                suspicion_score: 5,  // Reduced from 15: UPX is a legitimate packer
                 malware_associated: false,
             },
 

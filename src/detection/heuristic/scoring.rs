@@ -9,7 +9,71 @@
 use super::imports::SuspiciousImport;
 use super::packer::PackerInfo;
 use super::pe::PeInfo;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Check if a path is in a trusted system directory.
+/// Files in these directories get reduced heuristic scores.
+pub fn is_trusted_path(path: &Path) -> bool {
+    let path_str = path.to_string_lossy().to_lowercase();
+
+    // Windows trusted paths
+    let trusted_prefixes = [
+        // System directories
+        "c:\\windows\\",
+        "c:\\program files\\",
+        "c:\\program files (x86)\\",
+        // User application directories
+        "\\appdata\\local\\programs\\",
+        "\\appdata\\local\\microsoft\\",
+        "\\appdata\\local\\google\\",
+        "\\appdata\\local\\discord\\",
+        "\\appdata\\local\\slack\\",
+        "\\appdata\\local\\nvidia\\",
+        "\\appdata\\roaming\\microsoft\\",
+        // Python paths (common false positives)
+        "\\python\\",
+        "\\python3",
+        "\\anaconda",
+        "\\miniconda",
+        "\\site-packages\\",
+        "\\lib\\site-packages\\",
+        // Development tools
+        "\\visual studio\\",
+        "\\vs code\\",
+        "\\vscode\\",
+        "\\jetbrains\\",
+        "\\unity\\",
+        "\\unreal engine\\",
+        "\\autodesk\\",
+        "\\steam\\steamapps\\common\\",
+        // Linux trusted paths
+        "/usr/bin/",
+        "/usr/lib/",
+        "/usr/local/",
+        "/opt/",
+        "/snap/",
+        "/var/lib/snapd/",
+    ];
+
+    for prefix in trusted_prefixes {
+        if path_str.contains(prefix) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Get the trust reduction factor for a path.
+/// Returns a multiplier (0.0 to 1.0) that should be applied to the score.
+/// Lower values mean more trusted (more score reduction).
+pub fn get_trust_multiplier(path: &Path) -> f32 {
+    if is_trusted_path(path) {
+        0.5  // Reduce score by 50% for trusted paths
+    } else {
+        1.0  // No reduction for untrusted paths
+    }
+}
 
 /// Score category based on heuristic analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,10 +228,20 @@ impl HeuristicScorer {
             total_score += import.score as f32 * self.import_weight;
         }
 
-        // Add packer score
+        // Add packer score (but reduce for legitimate packers like UPX)
         if let Some(ref packer) = result.packer_info {
-            total_score += packer.suspicion_score as f32 * self.packer_weight;
+            let packer_score = if super::packer::PackerDetector::is_legitimate_packer(&packer.name) {
+                // Legitimate packers like UPX get significantly reduced score
+                packer.suspicion_score as f32 * 0.3
+            } else {
+                packer.suspicion_score as f32 * self.packer_weight
+            };
+            total_score += packer_score;
         }
+
+        // Apply trust multiplier for files in trusted directories
+        let trust_multiplier = get_trust_multiplier(&result.path);
+        total_score *= trust_multiplier;
 
         // Apply diminishing returns for very high scores
         // This prevents small additional indicators from pushing score too high

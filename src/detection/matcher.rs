@@ -214,7 +214,7 @@ impl DetectionEngine {
         Self {
             hash_matcher: HashMatcher::new(db),
             heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
-            heuristic_threshold: 50,
+            heuristic_threshold: 70,
             heuristic_enabled: true,
         }
     }
@@ -246,11 +246,14 @@ impl DetectionEngine {
     /// Scan a file for threats using all detection methods.
     pub fn scan_file(&self, path: &Path) -> Result<Option<Detection>> {
         // 1. Hash-based detection (fastest, check first)
+        // Hash-based detection always runs regardless of trusted path status
+        // because known malware should always be detected
         if let Some(match_result) = self.hash_matcher.match_file(path)? {
             return Ok(Some(match_result.to_detection(path)));
         }
 
         // 2. Heuristic analysis (if enabled)
+        // Trusted path score reduction is now handled in the scoring module
         if self.heuristic_enabled {
             if let Ok(heuristic_result) = self.heuristic_engine.analyze_file(path) {
                 if let Some(detection) = self

@@ -191,7 +191,7 @@ impl Default for DetectionConfig {
             enable_yara: true,
             enable_cloud_lookup: false,
             pup_detection: true,
-            heuristic_threshold: 50,
+            heuristic_threshold: 70,
         }
     }
 }
