@@ -7,8 +7,8 @@ use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
 use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
-    BrowserScanner, BrowserType, FileScanner, NetworkScanner, PersistenceScanner, ProcessScanner,
-    ScanResultStore,
+    BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
+    PersistenceScanner, ProcessScanner, ScanResultStore,
 };
 use pc_peroxide::ui::cli::{
     BrowserFilter, Cli, Commands, ConfigAction, ExportFormat, HistoryAction, OutputFormat,
@@ -119,25 +119,34 @@ async fn run_scan(
 ) -> Result<()> {
     let scanner = FileScanner::new(config);
 
+    // Set up progress reporting for non-silent mode
+    if !silent {
+        let reporter = Arc::new(ConsoleProgressReporter::new());
+        let reporter_clone = reporter.clone();
+        scanner.set_progress_callback(move |progress| {
+            reporter_clone.report(&progress);
+        });
+    }
+
     let summary = if quick {
         if !silent {
-            log::info!("Starting quick scan...");
+            eprintln!("Starting quick scan...");
         }
         scanner.quick_scan().await?
     } else if full {
         if !silent {
-            log::info!("Starting full system scan...");
+            eprintln!("Starting full system scan...");
         }
         scanner.full_scan().await?
     } else if let Some(paths) = path {
         if !silent {
-            log::info!("Starting custom scan of {} path(s)...", paths.len());
+            eprintln!("Starting custom scan of {} path(s)...", paths.len());
         }
         scanner.custom_scan(paths).await?
     } else {
         // Default to quick scan
         if !silent {
-            log::info!("Starting quick scan (default)...");
+            eprintln!("Starting quick scan (default)...");
         }
         scanner.quick_scan().await?
     };
