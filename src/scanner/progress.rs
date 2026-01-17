@@ -29,6 +29,8 @@ pub struct ScanProgress {
     pub is_complete: bool,
     /// Whether scan was cancelled
     pub is_cancelled: bool,
+    /// Recent scan rate (files per second) over sliding window
+    pub recent_rate: f64,
 }
 
 impl ScanProgress {
@@ -84,6 +86,13 @@ impl ScanProgress {
     }
 }
 
+/// Sample for rate calculation sliding window.
+#[derive(Clone, Copy)]
+struct RateSample {
+    timestamp: Instant,
+    files_scanned: u64,
+}
+
 /// Progress tracker for real-time scan monitoring.
 #[allow(clippy::type_complexity)]
 pub struct ProgressTracker {
@@ -100,6 +109,10 @@ pub struct ProgressTracker {
     callback: RwLock<Option<Box<dyn Fn(ScanProgress) + Send + Sync>>>,
     callback_interval: Duration,
     last_callback: RwLock<Instant>,
+    /// Sliding window samples for rate calculation
+    rate_samples: RwLock<Vec<RateSample>>,
+    /// Window duration for rate calculation (default 5 seconds)
+    rate_window: Duration,
 }
 
 impl Default for ProgressTracker {
@@ -126,6 +139,8 @@ impl ProgressTracker {
             callback: RwLock::new(None),
             callback_interval: Duration::from_millis(100),
             last_callback: RwLock::new(now),
+            rate_samples: RwLock::new(Vec::with_capacity(64)),
+            rate_window: Duration::from_secs(5),
         }
     }
 
@@ -141,6 +156,51 @@ impl ProgressTracker {
     /// Set the callback interval.
     pub fn set_interval(&mut self, interval: Duration) {
         self.callback_interval = interval;
+    }
+
+    /// Record a rate sample for sliding window calculation.
+    fn record_rate_sample(&self) {
+        let now = Instant::now();
+        let files = self.files_scanned.load(Ordering::Relaxed);
+        let mut samples = self.rate_samples.write().unwrap();
+
+        // Add new sample
+        samples.push(RateSample {
+            timestamp: now,
+            files_scanned: files,
+        });
+
+        // Remove samples older than the window
+        let cutoff = now - self.rate_window;
+        samples.retain(|s| s.timestamp > cutoff);
+    }
+
+    /// Calculate the recent scan rate using the sliding window.
+    fn calculate_recent_rate(&self) -> f64 {
+        let samples = self.rate_samples.read().unwrap();
+
+        if samples.len() < 2 {
+            // Fall back to overall average if not enough samples
+            let elapsed = self.start_time.elapsed().as_secs_f64();
+            let files = self.files_scanned.load(Ordering::Relaxed);
+            if elapsed > 0.0 {
+                return files as f64 / elapsed;
+            }
+            return 0.0;
+        }
+
+        // Get oldest and newest samples in window
+        let oldest = samples.first().unwrap();
+        let newest = samples.last().unwrap();
+
+        let time_delta = newest.timestamp.duration_since(oldest.timestamp).as_secs_f64();
+        let files_delta = newest.files_scanned.saturating_sub(oldest.files_scanned);
+
+        if time_delta > 0.0 {
+            files_delta as f64 / time_delta
+        } else {
+            0.0
+        }
     }
 
     /// Set the estimated total number of files.
@@ -212,6 +272,7 @@ impl ProgressTracker {
             start_time: self.start_time,
             is_complete: self.is_complete.load(Ordering::SeqCst),
             is_cancelled: self.is_cancelled.load(Ordering::SeqCst),
+            recent_rate: self.calculate_recent_rate(),
         }
     }
 
@@ -228,6 +289,7 @@ impl ProgressTracker {
         self.is_complete.store(false, Ordering::SeqCst);
         self.is_cancelled.store(false, Ordering::SeqCst);
         *self.last_callback.write().unwrap() = Instant::now();
+        self.rate_samples.write().unwrap().clear();
     }
 
     /// Trigger callback if interval has passed.
@@ -248,6 +310,9 @@ impl ProgressTracker {
             let mut last = self.last_callback.write().unwrap();
             *last = Instant::now();
         }
+
+        // Record sample for sliding window rate calculation
+        self.record_rate_sample();
 
         let callback = self.callback.read().unwrap();
         if let Some(ref cb) = *callback {
@@ -293,7 +358,8 @@ impl ConsoleProgressReporter {
             "Scanning"
         };
 
-        let rate = progress.files_per_second();
+        // Use recent rate (sliding window) for more accurate real-time feedback
+        let rate = progress.recent_rate;
         let elapsed = progress.elapsed().as_secs();
 
         let message = if let Some(pct) = progress.percentage() {
@@ -395,10 +461,12 @@ mod tests {
             start_time: Instant::now() - Duration::from_secs(10),
             is_complete: false,
             is_cancelled: false,
+            recent_rate: 10.0,
         };
 
         assert!((progress.files_per_second() - 10.0).abs() < 1.0);
         assert_eq!(progress.percentage(), Some(50.0));
+        assert!((progress.recent_rate - 10.0).abs() < 0.1);
     }
 
     #[test]
