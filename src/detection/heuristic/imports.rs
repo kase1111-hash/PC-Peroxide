@@ -113,202 +113,202 @@ impl ImportAnalyzer {
                 description: "Native APC queuing (injection)",
             },
 
-            // Keylogging APIs
+            // Input handling APIs (common in games, input managers, accessibility software)
             SuspiciousApiDef {
                 name: "SetWindowsHookEx",
                 category: "keylogger",
-                risk_level: "high",
-                score: 15,
-                description: "Sets Windows hook (keylogger, mouse capture)",
+                risk_level: "medium",
+                score: 8,  // Reduced: used by hotkey managers, accessibility
+                description: "Sets Windows hook",
             },
             SuspiciousApiDef {
                 name: "GetAsyncKeyState",
                 category: "keylogger",
-                risk_level: "medium",
-                score: 10,
-                description: "Gets key state (keylogger)",
+                risk_level: "low",
+                score: 2,  // Reduced: extremely common in games
+                description: "Gets key state",
             },
             SuspiciousApiDef {
                 name: "GetKeyState",
                 category: "keylogger",
                 risk_level: "low",
-                score: 5,
-                description: "Gets key state (potential keylogger)",
+                score: 0,  // Reduced to 0: basic input handling
+                description: "Gets key state",
             },
             SuspiciousApiDef {
                 name: "RegisterRawInputDevices",
                 category: "keylogger",
-                risk_level: "medium",
-                score: 10,
-                description: "Registers raw input (keylogger)",
+                risk_level: "low",
+                score: 2,  // Reduced: used by games, input software
+                description: "Registers raw input",
             },
 
-            // Cryptography APIs (ransomware indicators)
+            // Cryptography APIs (ransomware indicators when combined, but commonly used by legitimate software)
             SuspiciousApiDef {
                 name: "CryptEncrypt",
                 category: "ransomware",
-                risk_level: "medium",
-                score: 10,
-                description: "Encrypts data (ransomware indicator)",
+                risk_level: "low",
+                score: 3,  // Reduced: commonly used by legitimate crypto libraries
+                description: "Encrypts data (common in legitimate software)",
             },
             SuspiciousApiDef {
                 name: "CryptDecrypt",
                 category: "ransomware",
                 risk_level: "low",
-                score: 5,
+                score: 2,  // Reduced: very common
                 description: "Decrypts data",
             },
             SuspiciousApiDef {
                 name: "CryptGenKey",
                 category: "ransomware",
-                risk_level: "medium",
-                score: 8,
-                description: "Generates crypto key (ransomware indicator)",
+                risk_level: "low",
+                score: 3,  // Reduced: commonly used legitimately
+                description: "Generates crypto key",
             },
             SuspiciousApiDef {
                 name: "CryptAcquireContext",
                 category: "ransomware",
                 risk_level: "low",
-                score: 5,
+                score: 2,  // Reduced: very common
                 description: "Acquires crypto context",
             },
 
-            // Downloading/networking
+            // Downloading/networking (common in all internet-connected apps)
             SuspiciousApiDef {
                 name: "URLDownloadToFile",
                 category: "downloader",
-                risk_level: "high",
-                score: 15,
-                description: "Downloads file from URL (dropper)",
+                risk_level: "medium",
+                score: 8,  // Reduced: used by updaters, installers
+                description: "Downloads file from URL",
             },
             SuspiciousApiDef {
                 name: "InternetReadFile",
                 category: "downloader",
                 risk_level: "low",
-                score: 5,
+                score: 1,  // Reduced: extremely common
                 description: "Reads from internet",
             },
             SuspiciousApiDef {
                 name: "HttpSendRequest",
                 category: "networking",
                 risk_level: "low",
-                score: 3,
+                score: 0,  // Reduced to 0: basic networking
                 description: "Sends HTTP request",
             },
 
-            // Anti-debugging
+            // Anti-debugging (also used by legitimate software like games, anti-cheat, debuggers)
             SuspiciousApiDef {
                 name: "IsDebuggerPresent",
                 category: "anti_debug",
-                risk_level: "medium",
-                score: 10,
-                description: "Checks for debugger (evasion)",
+                risk_level: "low",
+                score: 3,  // Reduced: used by anti-cheat systems, games
+                description: "Checks for debugger",
             },
             SuspiciousApiDef {
                 name: "CheckRemoteDebuggerPresent",
                 category: "anti_debug",
-                risk_level: "medium",
-                score: 12,
-                description: "Checks for remote debugger (evasion)",
+                risk_level: "low",
+                score: 4,  // Reduced: used by anti-cheat systems
+                description: "Checks for remote debugger",
             },
             SuspiciousApiDef {
                 name: "NtQueryInformationProcess",
                 category: "anti_debug",
-                risk_level: "medium",
-                score: 8,
-                description: "Queries process info (anti-debug)",
+                risk_level: "low",
+                score: 3,  // Reduced: legitimate uses
+                description: "Queries process info",
             },
             SuspiciousApiDef {
                 name: "OutputDebugString",
                 category: "anti_debug",
                 risk_level: "low",
-                score: 3,
-                description: "Debug output (anti-debug check)",
+                score: 0,  // Reduced to 0: debugging is normal
+                description: "Debug output",
             },
 
-            // Persistence
+            // Persistence (common in legitimate installers and applications)
             SuspiciousApiDef {
                 name: "RegSetValueEx",
                 category: "persistence",
                 risk_level: "low",
-                score: 5,
-                description: "Sets registry value (persistence)",
+                score: 1,  // Reduced: extremely common in legitimate software
+                description: "Sets registry value",
             },
             SuspiciousApiDef {
                 name: "CreateService",
                 category: "persistence",
-                risk_level: "medium",
-                score: 10,
-                description: "Creates Windows service (persistence)",
+                risk_level: "low",
+                score: 4,  // Reduced: used by legitimate installers
+                description: "Creates Windows service",
             },
             SuspiciousApiDef {
                 name: "ChangeServiceConfig",
                 category: "persistence",
-                risk_level: "medium",
-                score: 8,
+                risk_level: "low",
+                score: 3,  // Reduced: used by service managers
                 description: "Modifies service config",
             },
 
-            // Privilege escalation
+            // Privilege operations (used by installers, admin tools)
             SuspiciousApiDef {
                 name: "AdjustTokenPrivileges",
                 category: "privilege",
-                risk_level: "medium",
-                score: 10,
-                description: "Adjusts token privileges (privilege escalation)",
+                risk_level: "low",
+                score: 4,  // Reduced: used by installers, backup tools
+                description: "Adjusts token privileges",
             },
             SuspiciousApiDef {
                 name: "LookupPrivilegeValue",
                 category: "privilege",
                 risk_level: "low",
-                score: 5,
+                score: 1,  // Reduced: common setup operation
                 description: "Looks up privilege value",
             },
             SuspiciousApiDef {
                 name: "ImpersonateLoggedOnUser",
                 category: "privilege",
-                risk_level: "high",
-                score: 15,
-                description: "Impersonates user (privilege escalation)",
+                risk_level: "medium",
+                score: 8,  // Reduced: used by services, admin tools
+                description: "Impersonates user",
             },
 
-            // Shell execution
+            // Shell execution (very common in legitimate software)
             SuspiciousApiDef {
                 name: "ShellExecute",
                 category: "execution",
                 risk_level: "low",
-                score: 5,
+                score: 2,  // Reduced: very common
                 description: "Executes shell command",
             },
             SuspiciousApiDef {
                 name: "CreateProcess",
                 category: "execution",
                 risk_level: "low",
-                score: 3,
+                score: 1,  // Reduced: extremely common in all software
                 description: "Creates new process",
             },
             SuspiciousApiDef {
                 name: "WinExec",
                 category: "execution",
-                risk_level: "medium",
-                score: 8,
+                risk_level: "low",
+                score: 4,  // Reduced: legacy but still used
                 description: "Executes program (legacy API)",
             },
 
-            // Screen capture
+            // Screen/graphics operations (extremely common in GUI applications)
             SuspiciousApiDef {
                 name: "BitBlt",
                 category: "spyware",
                 risk_level: "low",
-                score: 5,
-                description: "Copies bitmap (screen capture)",
+                score: 0,  // Reduced to 0: used by all GUI apps
+                description: "Copies bitmap",
             },
             SuspiciousApiDef {
                 name: "GetDC",
                 category: "spyware",
                 risk_level: "low",
-                score: 3,
-                description: "Gets device context (screen capture)",
+                score: 0,  // Reduced to 0: used by all GUI apps
+                description: "Gets device context",
             },
 
             // Process manipulation
@@ -316,44 +316,44 @@ impl ImportAnalyzer {
                 name: "OpenProcess",
                 category: "process",
                 risk_level: "low",
-                score: 5,
+                score: 2,  // Reduced: common in legitimate software
                 description: "Opens process handle",
             },
             SuspiciousApiDef {
                 name: "TerminateProcess",
                 category: "process",
-                risk_level: "medium",
-                score: 8,
+                risk_level: "low",
+                score: 3,  // Reduced: used by process managers, installers
                 description: "Terminates process",
             },
             SuspiciousApiDef {
                 name: "SuspendThread",
                 category: "process",
-                risk_level: "medium",
-                score: 8,
+                risk_level: "low",
+                score: 4,  // Reduced: used by debuggers, profilers
                 description: "Suspends thread",
             },
 
-            // Module loading
+            // Module loading (extremely common - nearly every program uses these)
             SuspiciousApiDef {
                 name: "LoadLibrary",
                 category: "loading",
                 risk_level: "low",
-                score: 3,
+                score: 0,  // Reduced to 0: used by virtually every program
                 description: "Loads library dynamically",
             },
             SuspiciousApiDef {
                 name: "GetProcAddress",
                 category: "loading",
                 risk_level: "low",
-                score: 3,
+                score: 0,  // Reduced to 0: used by virtually every program
                 description: "Gets function address",
             },
             SuspiciousApiDef {
                 name: "LdrLoadDll",
                 category: "loading",
                 risk_level: "medium",
-                score: 10,
+                score: 5,  // Reduced: native but still legitimate in some cases
                 description: "Native DLL loading (evasion)",
             },
         ]

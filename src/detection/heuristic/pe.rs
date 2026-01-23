@@ -273,43 +273,45 @@ impl PeAnalyzer {
 
         // Check for suspicious timestamps
         if pe.timestamp == 0 {
-            anomalies.push(PeAnomaly::new("PE timestamp is zero (might be wiped)", 5));
+            anomalies.push(PeAnomaly::new("PE timestamp is zero (might be wiped)", 2));  // Reduced from 5
         } else if pe.timestamp > 0xFFFFFF00 {
-            anomalies.push(PeAnomaly::new("PE timestamp appears invalid", 10));
+            anomalies.push(PeAnomaly::new("PE timestamp appears invalid", 5));  // Reduced from 10
         }
 
         // Check for missing security features
+        // Note: Many legitimate older programs don't have these
         if !pe.has_aslr {
-            anomalies.push(PeAnomaly::new("ASLR not enabled", 5));
+            anomalies.push(PeAnomaly::new("ASLR not enabled", 1));  // Reduced from 5: very common
         }
         if !pe.has_dep {
-            anomalies.push(PeAnomaly::new("DEP/NX not enabled", 5));
+            anomalies.push(PeAnomaly::new("DEP/NX not enabled", 1));  // Reduced from 5: very common
         }
 
         // Check for executable and writable sections (RWX)
+        // This is still suspicious but reduce score slightly
         for section in &pe.sections {
             if section.is_executable && section.is_writable {
                 anomalies.push(PeAnomaly::new(
                     format!("Section '{}' is both executable and writable (RWX)", section.name),
-                    20,
+                    12,  // Reduced from 20: some legitimate packers/JIT compilers use this
                 ));
             }
         }
 
         // Check for unusual section names
+        // Note: Packer section names are already detected by packer detector
+        // so we skip those here to avoid double-scoring
         for section in &pe.sections {
             let name = section.name.to_lowercase();
+            // Skip packer names - already handled by packer detector
             if name.contains("upx") || name.contains("aspack") || name.contains("themida") {
-                anomalies.push(PeAnomaly::new(
-                    format!("Suspicious section name: {}", section.name),
-                    15,
-                ));
+                continue;  // Skip: handled by packer detector
             }
             // Empty or unusual names
             if section.name.is_empty() || section.name.starts_with('.') && section.name.len() == 1 {
                 anomalies.push(PeAnomaly::new(
                     format!("Unusual section name: '{}'", section.name),
-                    5,
+                    2,  // Reduced from 5
                 ));
             }
         }
@@ -324,7 +326,7 @@ impl PeAnalyzer {
                             "Section '{}' raw size much larger than virtual size",
                             section.name
                         ),
-                        10,
+                        5,  // Reduced from 10
                     ));
                 }
             }
@@ -335,19 +337,19 @@ impl PeAnalyzer {
                         "Section '{}' has zero raw size but is executable",
                         section.name
                     ),
-                    10,
+                    5,  // Reduced from 10
                 ));
             }
         }
 
-        // Check for TLS callbacks (often used for anti-debugging)
+        // Check for TLS callbacks (often used for anti-debugging, but also legitimate initialization)
         if pe.has_tls {
-            anomalies.push(PeAnomaly::new("TLS callbacks present (potential anti-debug)", 10));
+            anomalies.push(PeAnomaly::new("TLS callbacks present", 3));  // Reduced from 10: common in legitimate software
         }
 
         // Entry point in unusual location
         if pe.entry_point == 0 && !pe.is_dll {
-            anomalies.push(PeAnomaly::new("Entry point is zero", 15));
+            anomalies.push(PeAnomaly::new("Entry point is zero", 8));  // Reduced from 15
         }
 
         // Check if entry point is outside normal sections
@@ -363,31 +365,31 @@ impl PeAnalyzer {
                             "Entry point in non-executable section: {}",
                             section.name
                         ),
-                        25,
+                        15,  // Reduced from 25
                     ));
                 }
                 // Entry point in last section (common for packed files)
                 if section.name != ".text" && pe.sections.last().map(|s| &s.name) == Some(&section.name) {
                     anomalies.push(PeAnomaly::new(
                         format!("Entry point in last section: {}", section.name),
-                        10,
+                        5,  // Reduced from 10
                     ));
                 }
                 break;
             }
         }
         if !entry_in_section && pe.entry_point != 0 {
-            anomalies.push(PeAnomaly::new("Entry point outside any section", 20));
+            anomalies.push(PeAnomaly::new("Entry point outside any section", 12));  // Reduced from 20
         }
 
         // Too few sections might indicate packing
         if pe.num_sections < 2 && !pe.is_dll {
-            anomalies.push(PeAnomaly::new("Very few sections (possible packing)", 10));
+            anomalies.push(PeAnomaly::new("Very few sections (possible packing)", 5));  // Reduced from 10
         }
 
         // Check for no imports (suspicious for executables)
         if pe.imports.is_empty() && !pe.is_dll {
-            anomalies.push(PeAnomaly::new("No imports (possible packing or shellcode)", 15));
+            anomalies.push(PeAnomaly::new("No imports (possible packing or shellcode)", 8));  // Reduced from 15
         }
 
         anomalies

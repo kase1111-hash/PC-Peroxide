@@ -108,6 +108,8 @@ impl HeuristicEngine {
         result.entropy = file_entropy;
 
         // Check section entropies if PE
+        // Note: Many legitimate compressed/encrypted files have high entropy
+        // Only flag very high entropy (>7.5) and with reduced scores
         let section_indicators: Vec<(String, u8)> = result
             .pe_info
             .as_ref()
@@ -115,14 +117,14 @@ impl HeuristicEngine {
                 pe_info
                     .sections
                     .iter()
-                    .filter(|section| section.entropy > 7.0)
+                    .filter(|section| section.entropy > 7.5)  // Raised threshold from 7.0 to 7.5
                     .map(|section| {
                         (
                             format!(
-                                "High entropy section: {} ({:.2})",
+                                "Very high entropy section: {} ({:.2})",
                                 section.name, section.entropy
                             ),
-                            15u8,
+                            8u8,  // Reduced from 15 to 8
                         )
                     })
                     .collect()
@@ -134,15 +136,16 @@ impl HeuristicEngine {
         }
 
         // High overall entropy suggests packing/encryption
-        if file_entropy > 7.5 {
+        // But many legitimate files (compressed assets, encrypted data) have high entropy
+        if file_entropy > 7.8 {
             result.add_indicator(
                 format!("Very high file entropy: {:.2}", file_entropy),
-                20,
+                10,  // Reduced from 20 to 10
             );
-        } else if file_entropy > 7.0 {
+        } else if file_entropy > 7.5 {  // Raised threshold from 7.0 to 7.5
             result.add_indicator(
                 format!("High file entropy: {:.2}", file_entropy),
-                10,
+                5,  // Reduced from 10 to 5
             );
         }
 
