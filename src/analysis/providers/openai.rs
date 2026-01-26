@@ -179,9 +179,9 @@ impl OpenAiProvider {
         // Extract MITRE ATT&CK references
         let mitre_mappings = self.extract_mitre_mappings(raw);
 
-        // Clean explanation
-        if explanation.len() > 2000 {
-            explanation = format!("{}...", &explanation[..1997]);
+        // Clean explanation - use char-based truncation to avoid panic on UTF-8 boundaries
+        if explanation.chars().count() > 2000 {
+            explanation = format!("{}...", explanation.chars().take(1997).collect::<String>());
         }
 
         (explanation, confidence, classification, mitre_mappings)
