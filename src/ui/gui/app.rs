@@ -212,8 +212,8 @@ impl PeroxideApp {
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
 
-                // Scan status indicator
-                let scan_state = self.scan_state.lock().unwrap();
+                // Scan status indicator - use unwrap_or_else to recover from poisoned mutex
+                let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
                 let status_color = if scan_state.is_scanning {
                     self.theme.warning
                 } else if scan_state
@@ -271,7 +271,7 @@ impl PeroxideApp {
 
             match self.view {
                 View::Dashboard => {
-                    let scan_state = self.scan_state.lock().unwrap().clone();
+                    let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner()).clone();
                     let quarantine_count = self
                         .quarantine
                         .as_ref()
@@ -314,7 +314,7 @@ impl PeroxideApp {
                     }
                 }
                 View::Results => {
-                    let scan_state = self.scan_state.lock().unwrap();
+                    let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
                     if let Some(action) =
                         self.results_view
                             .render(ui, scan_state.last_scan.as_ref(), &scan_state.threats_found)
@@ -472,7 +472,7 @@ impl PeroxideApp {
 
     /// Start a scan with the given type and paths.
     fn start_scan(&self, scan_type: ScanType, paths: Vec<PathBuf>) {
-        let mut state = self.scan_state.lock().unwrap();
+        let mut state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
         state.is_scanning = true;
         state.progress = 0.0;
         state.files_scanned = 0;
@@ -491,7 +491,7 @@ impl PeroxideApp {
 
     /// Cancel the current scan.
     fn cancel_scan(&self) {
-        let mut state = self.scan_state.lock().unwrap();
+        let mut state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
         state.is_scanning = false;
         state.status = "Scan cancelled".to_string();
     }
@@ -554,7 +554,7 @@ impl PeroxideApp {
 
     /// Export scan results.
     fn export_results(&self, format: ExportFormat) {
-        let state = self.scan_state.lock().unwrap();
+        let state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref summary) = state.last_scan {
             // Open file dialog
             if let Some(path) = rfd::FileDialog::new()
@@ -589,8 +589,8 @@ impl eframe::App for PeroxideApp {
         self.render_content(ctx);
         self.render_about(ctx);
 
-        // Request repaint if scanning
-        if self.scan_state.lock().unwrap().is_scanning {
+        // Request repaint if scanning - use unwrap_or_else to recover from poisoned mutex
+        if self.scan_state.lock().unwrap_or_else(|e| e.into_inner()).is_scanning {
             ctx.request_repaint();
         }
     }

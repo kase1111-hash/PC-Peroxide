@@ -311,13 +311,15 @@ impl OllamaProvider {
 
         for prefix in prefixes {
             if result.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                result = result[prefix.len()..].trim().to_string();
+                // Use char-based slicing to avoid panic on UTF-8 boundaries
+                let prefix_chars = prefix.chars().count();
+                result = result.chars().skip(prefix_chars).collect::<String>().trim().to_string();
             }
         }
 
-        // Limit length
-        if result.len() > 2000 {
-            result = format!("{}...", &result[..1997]);
+        // Limit length - use char-based truncation to avoid panic on UTF-8 boundaries
+        if result.chars().count() > 2000 {
+            result = format!("{}...", result.chars().take(1997).collect::<String>());
         }
 
         result
