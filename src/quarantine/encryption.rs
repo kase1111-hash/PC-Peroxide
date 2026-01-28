@@ -62,6 +62,9 @@ impl EncryptionManager {
     }
 
     /// Save the encryption key to a file.
+    ///
+    /// On Unix systems, the file is created with mode 0600 (owner read/write only).
+    /// On Windows, the file inherits default permissions from the parent directory.
     pub fn save_key(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| Error::DirectoryAccess {
@@ -73,6 +76,28 @@ impl EncryptionManager {
         let mut file = File::create(path).map_err(|e| Error::file_write(path, e))?;
         file.write_all(&self.key)
             .map_err(|e| Error::file_write(path, e))?;
+
+        // Set restrictive permissions on the key file
+        Self::set_key_file_permissions(path)?;
+
+        Ok(())
+    }
+
+    /// Set restrictive permissions on the key file.
+    #[cfg(unix)]
+    fn set_key_file_permissions(path: &Path) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o600);
+        fs::set_permissions(path, permissions).map_err(|e| Error::file_write(path, e))?;
+        Ok(())
+    }
+
+    /// Set restrictive permissions on the key file (Windows stub).
+    #[cfg(not(unix))]
+    fn set_key_file_permissions(_path: &Path) -> Result<()> {
+        // On Windows, file permissions are handled differently through ACLs.
+        // The file is created with inherited permissions from the parent directory.
+        // For enhanced security on Windows, consider using the windows-acl crate.
         Ok(())
     }
 

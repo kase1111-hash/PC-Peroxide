@@ -159,7 +159,13 @@ impl SecureOperations {
 
         if source_size != dest_size {
             // Copy failed, remove partial dest
-            let _ = fs::remove_file(dest);
+            if let Err(cleanup_err) = fs::remove_file(dest) {
+                log::warn!(
+                    "Failed to clean up partial copy {:?}: {}",
+                    dest,
+                    cleanup_err
+                );
+            }
             return Err(Error::Internal(
                 "File copy verification failed".to_string(),
             ));

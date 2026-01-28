@@ -5,7 +5,7 @@
 //! - Linux: Reads /proc/net/tcp and /proc/net/udp
 //! - macOS: Uses netstat parsing
 
-use crate::core::error::{Error, Result};
+use crate::core::error::Result;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 

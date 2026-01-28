@@ -169,7 +169,13 @@ impl QuarantineVault {
         // Store metadata
         if let Err(e) = self.metadata.add(&item) {
             // Clean up vault file on failure
-            let _ = fs::remove_file(&vault_path);
+            if let Err(cleanup_err) = fs::remove_file(&vault_path) {
+                log::warn!(
+                    "Failed to clean up vault file {:?} after metadata error: {}",
+                    vault_path,
+                    cleanup_err
+                );
+            }
             return QuarantineResult::failure(
                 path.to_path_buf(),
                 format!("Failed to store metadata: {}", e),

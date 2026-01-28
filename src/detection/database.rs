@@ -542,26 +542,41 @@ impl std::fmt::Display for ImportResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
-    fn test_db() -> SignatureDatabase {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.db");
-        // Keep dir alive by leaking it (for tests only)
-        std::mem::forget(dir);
-        SignatureDatabase::open(&path).unwrap()
+    /// Test database fixture that keeps the temp directory alive.
+    struct TestDb {
+        #[allow(dead_code)]
+        dir: TempDir,
+        db: SignatureDatabase,
+    }
+
+    impl TestDb {
+        fn new() -> Self {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("test.db");
+            let db = SignatureDatabase::open(&path).unwrap();
+            Self { dir, db }
+        }
+    }
+
+    impl std::ops::Deref for TestDb {
+        type Target = SignatureDatabase;
+        fn deref(&self) -> &Self::Target {
+            &self.db
+        }
     }
 
     #[test]
     fn test_database_creation() {
-        let db = test_db();
+        let db = TestDb::new();
         let info = db.info().unwrap();
         assert_eq!(info.signature_count, 0);
     }
 
     #[test]
     fn test_signature_crud() {
-        let db = test_db();
+        let db = TestDb::new();
 
         // Create
         let sig = Signature::new_hash(
@@ -593,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_hash_lookup() {
-        let db = test_db();
+        let db = TestDb::new();
 
         let sig = Signature::new_hash(
             "HASH-001",
@@ -617,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_import() {
-        let db = test_db();
+        let db = TestDb::new();
 
         let mut file = SignatureFile::new("2025.01.15");
         file.add(Signature::new_hash(
