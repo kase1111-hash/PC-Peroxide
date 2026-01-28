@@ -456,7 +456,7 @@ impl FileScanner {
 
         let mut found_detection: Option<Detection> = None;
 
-        scanner.scan_zip(path, |entry| {
+        if let Err(e) = scanner.scan_zip(path, |entry| {
             if let Some(content) = &entry.content {
                 // Hash the content
                 let sha256 = HashCalculator::sha256_bytes(content);
@@ -479,7 +479,9 @@ impl FileScanner {
                 }
             }
             Ok(())
-        }).ok();
+        }) {
+            log::warn!("Failed to scan archive {:?}: {}", path, e);
+        }
 
         Ok(found_detection)
     }

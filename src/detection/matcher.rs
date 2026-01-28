@@ -361,13 +361,26 @@ impl ScanDetails {
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{tempdir, NamedTempFile, TempDir};
 
-    fn test_db() -> Arc<SignatureDatabase> {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        Arc::new(SignatureDatabase::open(&path).unwrap())
+    /// Test database fixture that keeps the temp directory alive.
+    struct TestDb {
+        #[allow(dead_code)]
+        dir: TempDir,
+        db: Arc<SignatureDatabase>,
+    }
+
+    impl TestDb {
+        fn new() -> Self {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("test.db");
+            let db = Arc::new(SignatureDatabase::open(&path).unwrap());
+            Self { dir, db }
+        }
+
+        fn db(&self) -> Arc<SignatureDatabase> {
+            Arc::clone(&self.db)
+        }
     }
 
     #[test]
@@ -376,8 +389,8 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(EICAR_STRING.as_bytes()).unwrap();
 
-        let db = test_db();
-        let matcher = HashMatcher::new(db);
+        let test_db = TestDb::new();
+        let matcher = HashMatcher::new(test_db.db());
 
         let result = matcher.match_file(file.path()).unwrap();
         assert!(result.is_some());
@@ -408,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_database_signature_match() {
-        let db = test_db();
+        let test_db = TestDb::new();
 
         // Add a test signature
         let sig = Signature::new_hash(
@@ -419,9 +432,9 @@ mod tests {
             ThreatCategory::Trojan,
             "Test malware signature",
         );
-        db.upsert_signature(&sig).unwrap();
+        test_db.db().upsert_signature(&sig).unwrap();
 
-        let matcher = HashMatcher::new(Arc::clone(&db));
+        let matcher = HashMatcher::new(test_db.db());
 
         // Match by SHA256
         let result = matcher
@@ -437,8 +450,8 @@ mod tests {
 
     #[test]
     fn test_detection_engine() {
-        let db = test_db();
-        let engine = DetectionEngine::new(db);
+        let test_db = TestDb::new();
+        let engine = DetectionEngine::new(test_db.db());
 
         // Test with EICAR
         let mut file = NamedTempFile::new().unwrap();
@@ -454,8 +467,8 @@ mod tests {
 
     #[test]
     fn test_clean_file() {
-        let db = test_db();
-        let engine = DetectionEngine::new(db);
+        let test_db = TestDb::new();
+        let engine = DetectionEngine::new(test_db.db());
 
         // Create a clean file
         let mut file = NamedTempFile::new().unwrap();
