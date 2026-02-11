@@ -31,18 +31,19 @@ impl ScanResultStore {
     /// Open the default scan result store.
     pub fn open_default() -> Result<Self> {
         let data_dir = crate::core::config::Config::data_dir();
-        std::fs::create_dir_all(&data_dir).map_err(|e| {
-            Error::DirectoryAccess {
-                path: data_dir.clone(),
-                source: e,
-            }
+        std::fs::create_dir_all(&data_dir).map_err(|e| Error::DirectoryAccess {
+            path: data_dir.clone(),
+            source: e,
         })?;
         Self::open(&data_dir.join(DEFAULT_RESULTS_DB))
     }
 
     /// Initialize the database schema.
     fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         conn.execute_batch(
             r#"
@@ -92,7 +93,10 @@ impl ScanResultStore {
 
     /// Save a scan summary and its detections.
     pub fn save_scan(&self, summary: &ScanSummary) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         // Insert or update scan summary
         conn.execute(
@@ -157,7 +161,10 @@ impl ScanResultStore {
 
     /// Load a scan summary by ID.
     pub fn load_scan(&self, scan_id: &str) -> Result<Option<ScanSummary>> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let scan = conn
             .query_row(
@@ -217,7 +224,8 @@ impl ScanResultStore {
                 Ok(Detection {
                     path: PathBuf::from(row.get::<_, String>(0)?),
                     threat_name: row.get(1)?,
-                    severity: Severity::parse(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
+                    severity: Severity::parse(&row.get::<_, String>(2)?)
+                        .unwrap_or(Severity::Medium),
                     category: ThreatCategory::parse(&row.get::<_, String>(3)?)
                         .unwrap_or(ThreatCategory::Unknown),
                     method: detection_method_from_str(&row.get::<_, String>(4)?),
@@ -235,7 +243,10 @@ impl ScanResultStore {
 
     /// Get recent scan history.
     pub fn get_recent_scans(&self, limit: usize) -> Result<Vec<ScanSummary>> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let mut stmt = conn
             .prepare(
@@ -277,7 +288,10 @@ impl ScanResultStore {
 
     /// Get all detections from scan history matching a hash.
     pub fn find_by_hash(&self, sha256: &str) -> Result<Vec<Detection>> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let mut stmt = conn
             .prepare(
@@ -293,7 +307,8 @@ impl ScanResultStore {
                 Ok(Detection {
                     path: PathBuf::from(row.get::<_, String>(0)?),
                     threat_name: row.get(1)?,
-                    severity: Severity::parse(&row.get::<_, String>(2)?).unwrap_or(Severity::Medium),
+                    severity: Severity::parse(&row.get::<_, String>(2)?)
+                        .unwrap_or(Severity::Medium),
                     category: ThreatCategory::parse(&row.get::<_, String>(3)?)
                         .unwrap_or(ThreatCategory::Unknown),
                     method: detection_method_from_str(&row.get::<_, String>(4)?),
@@ -311,14 +326,14 @@ impl ScanResultStore {
 
     /// Delete old scan records.
     pub fn cleanup_old_scans(&self, days_to_keep: u32) -> Result<u64> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
         let cutoff = Utc::now().timestamp() - (days_to_keep as i64 * 24 * 60 * 60);
 
         let deleted = conn
-            .execute(
-                "DELETE FROM scans WHERE start_time < ?1",
-                params![cutoff],
-            )
+            .execute("DELETE FROM scans WHERE start_time < ?1", params![cutoff])
             .map_err(|e| Error::Database(e.to_string()))?;
 
         Ok(deleted as u64)
@@ -326,7 +341,10 @@ impl ScanResultStore {
 
     /// Get total scan statistics.
     pub fn get_statistics(&self) -> Result<ScanStatistics> {
-        let conn = self.conn.lock().map_err(|_| Error::lock_poisoned("scan results database"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| Error::lock_poisoned("scan results database"))?;
 
         let stats = conn
             .query_row(

@@ -149,11 +149,7 @@ pub struct SuspiciousIndicator {
 
 impl SuspiciousIndicator {
     /// Create a new suspicious indicator.
-    pub fn new(
-        name: impl Into<String>,
-        description: impl Into<String>,
-        severity: u8,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, description: impl Into<String>, severity: u8) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
@@ -221,23 +217,19 @@ impl PatternDatabase {
                 .with_description("x64 syscall stub pattern")
                 .with_severity(55)
                 .with_category(PatternCategory::Shellcode),
-
             MemoryPattern::new("x64_gs_access", &[0x65, 0x48, 0x8b, 0x04, 0x25, 0x60, 0x00])
                 .with_description("x64 GS segment TEB access")
                 .with_severity(50)
                 .with_category(PatternCategory::Shellcode),
-
             // x86 shellcode patterns
             MemoryPattern::new("x86_fs_access", &[0x64, 0xa1, 0x30, 0x00, 0x00, 0x00])
                 .with_description("x86 FS segment PEB access")
                 .with_severity(50)
                 .with_category(PatternCategory::Shellcode),
-
             MemoryPattern::new("x86_getpc", &[0xe8, 0x00, 0x00, 0x00, 0x00, 0x58])
                 .with_description("x86 GetPC technique (call/pop)")
                 .with_severity(55)
                 .with_category(PatternCategory::Shellcode),
-
             // Egg hunter patterns
             MemoryPattern::new("egg_hunter_scasd", &[0xaf, 0x75])
                 .with_description("Egg hunter scasd loop")
@@ -254,29 +246,24 @@ impl PatternDatabase {
                 .with_description("Meterpreter server")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
-
             MemoryPattern::new("meterpreter", b"meterpreter")
                 .with_description("Meterpreter string")
                 .with_severity(80)
                 .with_category(PatternCategory::RemoteAccess),
-
             // Cobalt Strike
             MemoryPattern::new("beacon", b"beacon")
                 .with_description("Cobalt Strike Beacon")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
-
             MemoryPattern::new("cobaltstrike", b"cobaltstrike")
                 .with_description("Cobalt Strike string")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
-
             // Empire
             MemoryPattern::new("empire", b"empire")
                 .with_description("Empire framework")
                 .with_severity(75)
                 .with_category(PatternCategory::RemoteAccess),
-
             // Generic RAT indicators
             MemoryPattern::new("reverse_shell", b"reverse shell")
                 .with_description("Reverse shell string")
@@ -293,22 +280,18 @@ impl PatternDatabase {
                 .with_description("Mimikatz tool")
                 .with_severity(95)
                 .with_category(PatternCategory::CredentialTheft),
-
             MemoryPattern::new("sekurlsa", b"sekurlsa")
                 .with_description("Mimikatz sekurlsa module")
                 .with_severity(90)
                 .with_category(PatternCategory::CredentialTheft),
-
             MemoryPattern::new("wdigest", b"wdigest")
                 .with_description("WDigest credential access")
                 .with_severity(60)
                 .with_category(PatternCategory::CredentialTheft),
-
             MemoryPattern::new("lsadump", b"lsadump")
                 .with_description("LSA dump functionality")
                 .with_severity(85)
                 .with_category(PatternCategory::CredentialTheft),
-
             // LaZagne
             MemoryPattern::new("lazagne", b"lazagne")
                 .with_description("LaZagne credential harvester")
@@ -325,19 +308,16 @@ impl PatternDatabase {
                 .with_description("Reflective DLL loader")
                 .with_severity(75)
                 .with_category(PatternCategory::Injection),
-
             // Process hollowing
             MemoryPattern::new("ntunmapview", b"NtUnmapViewOfSection")
                 .with_description("NT unmap section (hollowing)")
                 .with_severity(50)
                 .with_category(PatternCategory::Injection),
-
             // APC injection
             MemoryPattern::new("ntqueueapc", b"NtQueueApcThread")
                 .with_description("APC queue injection")
                 .with_severity(55)
                 .with_category(PatternCategory::Injection),
-
             // Thread hijacking
             MemoryPattern::new("setthreadcontext", b"SetThreadContext")
                 .with_description("Thread context manipulation")
@@ -354,34 +334,28 @@ impl PatternDatabase {
                 .with_description("Windows Crypto API encryption")
                 .with_severity(30)
                 .with_category(PatternCategory::Ransomware),
-
             // Ransom note patterns
             MemoryPattern::new("readme_txt", b"README.txt")
                 .with_description("Ransom note filename")
                 .with_severity(35)
                 .with_category(PatternCategory::Ransomware),
-
             MemoryPattern::new("decrypt_files", b"decrypt your files")
                 .with_description("Ransom message")
                 .with_severity(70)
                 .with_category(PatternCategory::Ransomware),
-
             MemoryPattern::new("bitcoin", b"bitcoin")
                 .with_description("Bitcoin reference")
                 .with_severity(25)
                 .with_category(PatternCategory::Ransomware),
-
             MemoryPattern::new("onion", b".onion")
                 .with_description("Tor hidden service")
                 .with_severity(40)
                 .with_category(PatternCategory::Ransomware),
-
             // Shadow copy deletion
             MemoryPattern::new("vssadmin", b"vssadmin")
                 .with_description("VSS admin tool")
                 .with_severity(45)
                 .with_category(PatternCategory::Ransomware),
-
             MemoryPattern::new("shadowcopy", b"shadowcopy")
                 .with_description("Shadow copy reference")
                 .with_severity(40)
@@ -433,8 +407,7 @@ mod tests {
 
     #[test]
     fn test_pattern_match_display() {
-        let m = PatternMatch::new("test_pattern", 0x1234)
-            .with_severity(75);
+        let m = PatternMatch::new("test_pattern", 0x1234).with_severity(75);
         let display = format!("{}", m);
         assert!(display.contains("test_pattern"));
         assert!(display.contains("0x1234"));
@@ -451,8 +424,8 @@ mod tests {
 
     #[test]
     fn test_suspicious_indicator_display() {
-        let indicator = SuspiciousIndicator::new("test", "desc", 50)
-            .with_category(IndicatorCategory::Memory);
+        let indicator =
+            SuspiciousIndicator::new("test", "desc", 50).with_category(IndicatorCategory::Memory);
         let display = format!("{}", indicator);
         assert!(display.contains("Memory"));
         assert!(display.contains("test"));
@@ -462,7 +435,10 @@ mod tests {
     fn test_pattern_category_display() {
         assert_eq!(format!("{}", PatternCategory::Shellcode), "Shellcode");
         assert_eq!(format!("{}", PatternCategory::RemoteAccess), "RAT");
-        assert_eq!(format!("{}", PatternCategory::CredentialTheft), "Credential Theft");
+        assert_eq!(
+            format!("{}", PatternCategory::CredentialTheft),
+            "Credential Theft"
+        );
     }
 
     #[test]
@@ -478,7 +454,9 @@ mod tests {
         assert!(!patterns.is_empty());
 
         // All should be shellcode category
-        assert!(patterns.iter().all(|p| p.category == PatternCategory::Shellcode));
+        assert!(patterns
+            .iter()
+            .all(|p| p.category == PatternCategory::Shellcode));
     }
 
     #[test]
@@ -488,9 +466,15 @@ mod tests {
         // Should have patterns from all categories
         assert!(!patterns.is_empty());
 
-        let has_shellcode = patterns.iter().any(|p| p.category == PatternCategory::Shellcode);
-        let has_rat = patterns.iter().any(|p| p.category == PatternCategory::RemoteAccess);
-        let has_cred = patterns.iter().any(|p| p.category == PatternCategory::CredentialTheft);
+        let has_shellcode = patterns
+            .iter()
+            .any(|p| p.category == PatternCategory::Shellcode);
+        let has_rat = patterns
+            .iter()
+            .any(|p| p.category == PatternCategory::RemoteAccess);
+        let has_cred = patterns
+            .iter()
+            .any(|p| p.category == PatternCategory::CredentialTheft);
 
         assert!(has_shellcode);
         assert!(has_rat);

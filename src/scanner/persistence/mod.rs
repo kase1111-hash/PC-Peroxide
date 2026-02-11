@@ -13,9 +13,9 @@ pub mod registry;
 pub mod startup;
 pub mod tasks;
 
-pub use registry::{RegistryScanner, RegistryEntry, AutorunEntry};
-pub use startup::{StartupScanner, StartupEntry};
-pub use tasks::{TaskScanner, ScheduledTask};
+pub use registry::{AutorunEntry, RegistryEntry, RegistryScanner};
+pub use startup::{StartupEntry, StartupScanner};
+pub use tasks::{ScheduledTask, TaskScanner};
 
 use crate::core::error::Result;
 use crate::core::types::{Detection, DetectionMethod, Severity, ThreatCategory};
@@ -145,7 +145,10 @@ impl PersistenceEntry {
         };
 
         Some(Detection {
-            path: self.path.clone().unwrap_or_else(|| PathBuf::from(&self.location)),
+            path: self
+                .path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(&self.location)),
             threat_name: format!("Persistence.{}", self.persistence_type),
             severity,
             category: ThreatCategory::Generic,

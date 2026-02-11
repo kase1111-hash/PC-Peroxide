@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use super::rules::{Condition, RuleMatch, StringPattern, YaraRule};
 use crate::core::error::{Error, Result};
-use super::rules::{YaraRule, RuleMatch, StringPattern, Condition};
 
 /// YARA-like scanning engine.
 pub struct YaraEngine {
@@ -41,8 +41,14 @@ impl YaraEngine {
                 .with_description("Generic ransomware detection")
                 .with_severity("critical")
                 .with_category("ransomware")
-                .with_string(StringPattern::text_nocase("$ransom1", "your files have been encrypted"))
-                .with_string(StringPattern::text_nocase("$ransom2", "your personal files are encrypted"))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom1",
+                    "your files have been encrypted",
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom2",
+                    "your personal files are encrypted",
+                ))
                 .with_string(StringPattern::text_nocase("$ransom3", "decrypt your files"))
                 .with_string(StringPattern::text_nocase("$ransom4", "bitcoin"))
                 .with_string(StringPattern::text_nocase("$ransom5", "pay the ransom"))
@@ -150,7 +156,10 @@ impl YaraEngine {
                 .with_description("EICAR test file")
                 .with_severity("info")
                 .with_category("test")
-                .with_string(StringPattern::text("$eicar", "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"))
+                .with_string(StringPattern::text(
+                    "$eicar",
+                    "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
+                ))
                 .with_condition(Condition::Any),
         )?;
 
@@ -171,8 +180,7 @@ impl YaraEngine {
 
     /// Load rules from a JSON file.
     pub fn load_rules_file(&mut self, path: &Path) -> Result<()> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| Error::file_read(path, e))?;
+        let content = fs::read_to_string(path).map_err(|e| Error::file_read(path, e))?;
 
         let rules: Vec<YaraRule> = serde_json::from_str(&content)
             .map_err(|e| Error::YaraCompilation(format!("Failed to parse rules: {}", e)))?;
@@ -222,8 +230,7 @@ impl YaraEngine {
 
     /// Scan a file against all rules.
     pub fn scan_file(&self, path: &Path) -> Result<Vec<RuleMatch>> {
-        let data = fs::read(path)
-            .map_err(|e| Error::file_read(path, e))?;
+        let data = fs::read(path).map_err(|e| Error::file_read(path, e))?;
 
         Ok(self.scan_data(&data))
     }
@@ -260,11 +267,13 @@ mod tests {
     fn test_add_rule() {
         let mut engine = YaraEngine::new();
 
-        engine.add_rule(
-            YaraRule::new("TestRule")
-                .with_string(StringPattern::text("$test", "hello"))
-                .with_condition(Condition::Any),
-        ).unwrap();
+        engine
+            .add_rule(
+                YaraRule::new("TestRule")
+                    .with_string(StringPattern::text("$test", "hello"))
+                    .with_condition(Condition::Any),
+            )
+            .unwrap();
 
         assert_eq!(engine.rule_count(), 1);
         assert!(engine.get_rule("TestRule").is_some());
@@ -274,11 +283,13 @@ mod tests {
     fn test_scan_data() {
         let mut engine = YaraEngine::new();
 
-        engine.add_rule(
-            YaraRule::new("HelloWorld")
-                .with_string(StringPattern::text_nocase("$hello", "hello world"))
-                .with_condition(Condition::Any),
-        ).unwrap();
+        engine
+            .add_rule(
+                YaraRule::new("HelloWorld")
+                    .with_string(StringPattern::text_nocase("$hello", "hello world"))
+                    .with_condition(Condition::Any),
+            )
+            .unwrap();
 
         let data = b"This contains Hello World text";
         let matches = engine.scan_data(data);

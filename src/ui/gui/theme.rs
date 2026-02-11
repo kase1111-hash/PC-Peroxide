@@ -29,15 +29,15 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            primary: Color32::from_rgb(102, 126, 234),     // Purple-blue
-            success: Color32::from_rgb(72, 187, 120),      // Green
-            warning: Color32::from_rgb(237, 137, 54),      // Orange
-            danger: Color32::from_rgb(245, 101, 101),      // Red
-            background: Color32::from_rgb(26, 32, 44),     // Dark blue-gray
-            surface: Color32::from_rgb(45, 55, 72),        // Lighter dark
+            primary: Color32::from_rgb(102, 126, 234), // Purple-blue
+            success: Color32::from_rgb(72, 187, 120),  // Green
+            warning: Color32::from_rgb(237, 137, 54),  // Orange
+            danger: Color32::from_rgb(245, 101, 101),  // Red
+            background: Color32::from_rgb(26, 32, 44), // Dark blue-gray
+            surface: Color32::from_rgb(45, 55, 72),    // Lighter dark
             text_primary: Color32::from_rgb(237, 242, 247), // Almost white
             text_secondary: Color32::from_rgb(160, 174, 192), // Gray
-            border: Color32::from_rgb(74, 85, 104),        // Border gray
+            border: Color32::from_rgb(74, 85, 104),    // Border gray
         }
     }
 }
@@ -84,11 +84,23 @@ impl Theme {
 
         // Set text styles
         style.text_styles = [
-            (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
+            (
+                TextStyle::Small,
+                FontId::new(12.0, FontFamily::Proportional),
+            ),
             (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),
-            (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
-            (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
+            (
+                TextStyle::Button,
+                FontId::new(14.0, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Heading,
+                FontId::new(20.0, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Monospace,
+                FontId::new(13.0, FontFamily::Monospace),
+            ),
         ]
         .into();
 
@@ -105,16 +117,12 @@ impl Theme {
 
     /// Create styled subheading text.
     pub fn subheading(&self, text: &str) -> RichText {
-        RichText::new(text)
-            .size(16.0)
-            .color(self.text_secondary)
+        RichText::new(text).size(16.0).color(self.text_secondary)
     }
 
     /// Create styled label text.
     pub fn label(&self, text: &str) -> RichText {
-        RichText::new(text)
-            .size(12.0)
-            .color(self.text_secondary)
+        RichText::new(text).size(12.0).color(self.text_secondary)
     }
 
     /// Create styled value text.

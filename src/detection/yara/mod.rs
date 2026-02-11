@@ -7,8 +7,8 @@
 //! - Regex pattern matching
 //! - Basic condition evaluation
 
-pub mod rules;
 pub mod engine;
+pub mod rules;
 
-pub use rules::{YaraRule, RuleMeta, StringPattern, PatternType, RuleMatch};
 pub use engine::YaraEngine;
+pub use rules::{PatternType, RuleMatch, RuleMeta, StringPattern, YaraRule};

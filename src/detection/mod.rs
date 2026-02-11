@@ -16,4 +16,4 @@ pub use database::{ImportResult, SignatureDatabase};
 pub use heuristic::{HeuristicEngine, HeuristicResult, PeAnalyzer, PeInfo, ScoreCategory};
 pub use matcher::{DetectionEngine, HashMatcher, MatchResult};
 pub use signature::{DatabaseInfo, RemediationAction, Signature, SignatureFile, SignatureType};
-pub use yara::{YaraEngine, YaraRule, RuleMatch};
+pub use yara::{RuleMatch, YaraEngine, YaraRule};

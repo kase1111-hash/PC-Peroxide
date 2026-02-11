@@ -21,11 +21,13 @@ pub mod progress;
 pub mod results;
 
 pub use archive::{ArchiveScanner, ArchiveType, ArchivedFile};
-pub use browser::{BrowserExtension, BrowserScanner, BrowserScanResult, BrowserType, ExtensionRisk, HijackType};
+pub use browser::{
+    BrowserExtension, BrowserScanResult, BrowserScanner, BrowserType, ExtensionRisk, HijackType,
+};
 pub use file::FileScanner;
 pub use filetype::{FileType, FileTypeDetector};
-pub use network::{Connection, ConnectionState, NetworkScanner, NetworkScanResult, PortCategory};
+pub use network::{Connection, ConnectionState, NetworkScanResult, NetworkScanner, PortCategory};
 pub use persistence::{PersistenceEntry, PersistenceScanner, PersistenceType};
-pub use process::{ProcessScanner, ProcessScanResult, ProcessInfo};
+pub use process::{ProcessInfo, ProcessScanResult, ProcessScanner};
 pub use progress::{ConsoleProgressReporter, ProgressTracker, ScanProgress};
 pub use results::{ScanResultStore, ScanStatistics};

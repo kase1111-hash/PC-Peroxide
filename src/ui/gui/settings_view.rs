@@ -98,8 +98,7 @@ impl SettingsView {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Save Changes")
-                                        .color(egui::Color32::WHITE),
+                                    RichText::new("Save Changes").color(egui::Color32::WHITE),
                                 )
                                 .fill(self.theme.primary)
                                 .min_size(Vec2::new(120.0, 36.0)),
@@ -156,8 +155,7 @@ impl SettingsView {
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);
                         ui.label(
-                            RichText::new("Settings saved successfully!")
-                                .color(self.theme.success),
+                            RichText::new("Settings saved successfully!").color(self.theme.success),
                         );
                         ui.add_space(10.0);
                         if ui.button("OK").clicked() {
@@ -188,7 +186,10 @@ impl SettingsView {
 
             // Scan archives
             if ui
-                .checkbox(&mut this.edited.scan_archives, "Scan inside archives (ZIP, RAR, etc.)")
+                .checkbox(
+                    &mut this.edited.scan_archives,
+                    "Scan inside archives (ZIP, RAR, etc.)",
+                )
                 .changed()
             {
                 this.has_changes = true;
@@ -199,10 +200,7 @@ impl SettingsView {
                 ui.horizontal(|ui| {
                     ui.label("Max archive nesting depth:");
                     let mut value = this.edited.max_archive_depth as f32;
-                    if ui
-                        .add(egui::Slider::new(&mut value, 1.0..=10.0))
-                        .changed()
-                    {
+                    if ui.add(egui::Slider::new(&mut value, 1.0..=10.0)).changed() {
                         this.edited.max_archive_depth = value as u8;
                         this.has_changes = true;
                     }

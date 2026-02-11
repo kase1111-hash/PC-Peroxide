@@ -193,7 +193,10 @@ impl ProgressTracker {
         let oldest = samples.first().unwrap();
         let newest = samples.last().unwrap();
 
-        let time_delta = newest.timestamp.duration_since(oldest.timestamp).as_secs_f64();
+        let time_delta = newest
+            .timestamp
+            .duration_since(oldest.timestamp)
+            .as_secs_f64();
         let files_delta = newest.files_scanned.saturating_sub(oldest.files_scanned);
 
         if time_delta > 0.0 {
@@ -365,12 +368,7 @@ impl ConsoleProgressReporter {
         let message = if let Some(pct) = progress.percentage() {
             format!(
                 "\r[{}] {:.1}% | Files: {} | Threats: {} | Rate: {:.0}/s | Time: {}s",
-                status,
-                pct,
-                progress.files_scanned,
-                progress.threats_found,
-                rate,
-                elapsed
+                status, pct, progress.files_scanned, progress.threats_found, rate, elapsed
             )
         } else {
             format!(
@@ -388,7 +386,8 @@ impl ConsoleProgressReporter {
         };
 
         eprint!("{}{}", message, padding);
-        self.last_line_length.store(message.len(), Ordering::Relaxed);
+        self.last_line_length
+            .store(message.len(), Ordering::Relaxed);
 
         if progress.is_complete || progress.is_cancelled {
             eprintln!(); // New line at end

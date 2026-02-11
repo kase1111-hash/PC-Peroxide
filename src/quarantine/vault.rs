@@ -223,10 +223,7 @@ impl QuarantineVault {
 
         let vault_path = self.items_path().join(&item.vault_filename);
         if !vault_path.exists() {
-            return RestoreResult::failure(
-                id.to_string(),
-                "Vault file not found".to_string(),
-            );
+            return RestoreResult::failure(id.to_string(), "Vault file not found".to_string());
         }
 
         // Determine destination path
@@ -236,10 +233,7 @@ impl QuarantineVault {
 
         // Decrypt and restore
         if let Err(e) = self.encryption.decrypt_file(&vault_path, &restore_path) {
-            return RestoreResult::failure(
-                id.to_string(),
-                format!("Decryption failed: {}", e),
-            );
+            return RestoreResult::failure(id.to_string(), format!("Decryption failed: {}", e));
         }
 
         // Remove from quarantine
@@ -561,13 +555,7 @@ mod tests {
             80,
             false,
         );
-        vault.quarantine(
-            &files_dir.join("pup.exe"),
-            "PUP.Test",
-            "pup",
-            30,
-            false,
-        );
+        vault.quarantine(&files_dir.join("pup.exe"), "PUP.Test", "pup", 30, false);
 
         let stats = vault.stats().unwrap();
         assert_eq!(stats.total_count, 3);

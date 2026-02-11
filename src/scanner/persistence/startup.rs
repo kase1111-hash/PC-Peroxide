@@ -175,7 +175,8 @@ impl StartupScanner {
             }
 
             // Fallback path
-            let startup = PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp");
+            let startup =
+                PathBuf::from(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp");
             if startup.exists() {
                 return Some(startup);
             }
@@ -212,12 +213,11 @@ impl StartupScanner {
             return Ok(entries);
         }
 
-        let dir_entries = fs::read_dir(folder).map_err(|e| {
-            crate::core::error::Error::FileRead {
+        let dir_entries =
+            fs::read_dir(folder).map_err(|e| crate::core::error::Error::FileRead {
                 path: folder.to_path_buf(),
                 source: e,
-            }
-        })?;
+            })?;
 
         for entry in dir_entries.filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -298,9 +298,10 @@ impl StartupScanner {
         }
 
         // Check if it's a known item
-        let is_known = self.known_items.iter().any(|k| {
-            entry.name.to_lowercase().contains(&k.to_lowercase())
-        });
+        let is_known = self
+            .known_items
+            .iter()
+            .any(|k| entry.name.to_lowercase().contains(&k.to_lowercase()));
 
         if is_known {
             return 0; // Known items are not suspicious
@@ -464,7 +465,9 @@ mod tests {
         File::create(temp_dir.path().join("test.lnk")).unwrap();
         File::create(temp_dir.path().join("script.bat")).unwrap();
 
-        let entries = scanner.scan_folder(temp_dir.path(), "Test Startup").unwrap();
+        let entries = scanner
+            .scan_folder(temp_dir.path(), "Test Startup")
+            .unwrap();
 
         assert_eq!(entries.len(), 2);
 

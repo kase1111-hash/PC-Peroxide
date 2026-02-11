@@ -216,30 +216,18 @@ impl Condition {
         match self {
             Condition::All => matches.values().all(|m| !m.is_empty()),
             Condition::Any => matches.values().any(|m| !m.is_empty()),
-            Condition::AtLeast(n) => {
-                matches.values().filter(|m| !m.is_empty()).count() >= *n
-            }
-            Condition::Pattern(id) => {
-                matches.get(id).is_some_and(|m| !m.is_empty())
-            }
-            Condition::IsPE => {
-                data.len() >= 2 && data[0] == 0x4D && data[1] == 0x5A
-            }
-            Condition::IsELF => {
-                data.len() >= 4 && data[..4] == [0x7F, 0x45, 0x4C, 0x46]
-            }
+            Condition::AtLeast(n) => matches.values().filter(|m| !m.is_empty()).count() >= *n,
+            Condition::Pattern(id) => matches.get(id).is_some_and(|m| !m.is_empty()),
+            Condition::IsPE => data.len() >= 2 && data[0] == 0x4D && data[1] == 0x5A,
+            Condition::IsELF => data.len() >= 4 && data[..4] == [0x7F, 0x45, 0x4C, 0x46],
             Condition::FileSize { min, max } => {
                 let size = data.len() as u64;
                 let min_ok = min.is_none_or(|m| size >= m);
                 let max_ok = max.is_none_or(|m| size <= m);
                 min_ok && max_ok
             }
-            Condition::And(a, b) => {
-                a.evaluate(matches, data) && b.evaluate(matches, data)
-            }
-            Condition::Or(a, b) => {
-                a.evaluate(matches, data) || b.evaluate(matches, data)
-            }
+            Condition::And(a, b) => a.evaluate(matches, data) && b.evaluate(matches, data),
+            Condition::Or(a, b) => a.evaluate(matches, data) || b.evaluate(matches, data),
             Condition::Not(c) => !c.evaluate(matches, data),
         }
     }
@@ -397,7 +385,10 @@ mod tests {
         let mut rule = YaraRule::new("TestMalware")
             .with_description("Test malware detection")
             .with_severity("high")
-            .with_string(StringPattern::text_nocase("$ransom", "your files have been encrypted"))
+            .with_string(StringPattern::text_nocase(
+                "$ransom",
+                "your files have been encrypted",
+            ))
             .with_string(StringPattern::hex("$mz", "4D5A"))
             .with_condition(Condition::And(
                 Box::new(Condition::IsPE),

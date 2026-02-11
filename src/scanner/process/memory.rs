@@ -226,7 +226,6 @@ impl MemoryScanner {
             MemoryPattern::new("meterpreter", b"meterpreter")
                 .with_description("Meterpreter string")
                 .with_severity(75),
-
             // Cobalt Strike markers
             MemoryPattern::new("beacon_dll", b"beacon.dll")
                 .with_description("Cobalt Strike Beacon marker")
@@ -234,7 +233,6 @@ impl MemoryScanner {
             MemoryPattern::new("cobaltstrike", b"cobaltstrike")
                 .with_description("Cobalt Strike string")
                 .with_severity(80),
-
             // Common shellcode patterns
             MemoryPattern::new("shellcode_x64_start", &[0x48, 0x31, 0xc9, 0x48, 0x81, 0xe9])
                 .with_description("x64 shellcode prologue pattern")
@@ -242,12 +240,10 @@ impl MemoryScanner {
             MemoryPattern::new("shellcode_x86_start", &[0x31, 0xc9, 0x64, 0x8b, 0x41, 0x30])
                 .with_description("x86 shellcode PEB access pattern")
                 .with_severity(60),
-
             // API hashing patterns (common in shellcode)
             MemoryPattern::new("ror13_hash", &[0xc1, 0xcf, 0x0d]) // ror edi, 0xd
                 .with_description("ROR13 API hashing pattern")
                 .with_severity(50),
-
             // Mimikatz markers
             MemoryPattern::new("mimikatz", b"mimikatz")
                 .with_description("Mimikatz string")
@@ -255,7 +251,6 @@ impl MemoryScanner {
             MemoryPattern::new("sekurlsa", b"sekurlsa")
                 .with_description("Mimikatz sekurlsa module")
                 .with_severity(85),
-
             // Process injection markers
             MemoryPattern::new("ntdll_inject", b"NtAllocateVirtualMemory")
                 .with_description("NT memory allocation API")
@@ -266,17 +261,14 @@ impl MemoryScanner {
             MemoryPattern::new("writeprocessmemory", b"WriteProcessMemory")
                 .with_description("Process memory write API")
                 .with_severity(35),
-
             // Reflective DLL markers
             MemoryPattern::new("reflective_loader", b"ReflectiveLoader")
                 .with_description("Reflective DLL loader function")
                 .with_severity(70),
-
             // Empire/PowerShell markers
             MemoryPattern::new("empire", b"Empire")
                 .with_description("Empire framework marker")
                 .with_severity(70),
-
             // Generic suspicious strings
             MemoryPattern::new("keylogger", b"keylog")
                 .with_description("Keylogger string")
@@ -319,13 +311,17 @@ impl MemoryScanner {
             PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
             PAGE_GUARD, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
         };
-        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+        use windows::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+        };
 
         let mut regions = Vec::new();
 
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
-                .map_err(|e| crate::core::error::Error::Internal(format!("Failed to open process: {}", e)))?;
+                .map_err(|e| {
+                    crate::core::error::Error::Internal(format!("Failed to open process: {}", e))
+                })?;
 
             let mut address: usize = 0;
             let mut mbi: MEMORY_BASIC_INFORMATION = mem::zeroed();
@@ -428,12 +424,11 @@ impl MemoryScanner {
         let mut regions = Vec::new();
 
         let maps_path = format!("/proc/{}/maps", pid);
-        let maps_content = fs::read_to_string(&maps_path).map_err(|e| {
-            crate::core::error::Error::FileRead {
+        let maps_content =
+            fs::read_to_string(&maps_path).map_err(|e| crate::core::error::Error::FileRead {
                 path: maps_path.into(),
                 source: e,
-            }
-        })?;
+            })?;
 
         for line in maps_content.lines() {
             if let Some(region) = self.parse_linux_maps_line(line) {

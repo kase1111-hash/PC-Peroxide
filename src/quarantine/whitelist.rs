@@ -64,12 +64,7 @@ pub struct WhitelistEntry {
 
 impl WhitelistEntry {
     /// Create a new whitelist entry.
-    pub fn new(
-        id: String,
-        whitelist_type: WhitelistType,
-        pattern: String,
-        reason: String,
-    ) -> Self {
+    pub fn new(id: String, whitelist_type: WhitelistType, pattern: String, reason: String) -> Self {
         Self {
             id,
             whitelist_type,
@@ -181,8 +176,7 @@ impl WhitelistManager {
             let type_str: String = row.get(1)?;
             Ok(WhitelistEntry {
                 id: row.get(0)?,
-                whitelist_type: WhitelistType::from_db(&type_str)
-                    .unwrap_or(WhitelistType::Hash),
+                whitelist_type: WhitelistType::from_db(&type_str).unwrap_or(WhitelistType::Hash),
                 pattern: row.get(2)?,
                 reason: row.get(3)?,
                 created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
@@ -256,7 +250,9 @@ impl WhitelistManager {
 
     /// Remove a whitelist entry.
     pub fn remove(&self, id: &str) -> Result<bool> {
-        let rows = self.conn.execute("DELETE FROM whitelist WHERE id = ?1", [id])?;
+        let rows = self
+            .conn
+            .execute("DELETE FROM whitelist WHERE id = ?1", [id])?;
         Ok(rows > 0)
     }
 

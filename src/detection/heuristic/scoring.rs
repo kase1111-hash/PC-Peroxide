@@ -69,9 +69,9 @@ pub fn is_trusted_path(path: &Path) -> bool {
 /// Lower values mean more trusted (more score reduction).
 pub fn get_trust_multiplier(path: &Path) -> f32 {
     if is_trusted_path(path) {
-        0.5  // Reduce score by 50% for trusted paths
+        0.5 // Reduce score by 50% for trusted paths
     } else {
-        1.0  // No reduction for untrusted paths
+        1.0 // No reduction for untrusted paths
     }
 }
 
@@ -230,7 +230,8 @@ impl HeuristicScorer {
 
         // Add packer score (but reduce for legitimate packers like UPX)
         if let Some(ref packer) = result.packer_info {
-            let packer_score = if super::packer::PackerDetector::is_legitimate_packer(&packer.name) {
+            let packer_score = if super::packer::PackerDetector::is_legitimate_packer(&packer.name)
+            {
                 // Legitimate packers like UPX get significantly reduced score
                 packer.suspicion_score as f32 * 0.3
             } else {

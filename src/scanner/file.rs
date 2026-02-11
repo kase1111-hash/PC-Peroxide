@@ -142,7 +142,11 @@ impl FileScanner {
                         return;
                     }
                     Err(e) => {
-                        log::warn!("Failed to auto-import signatures from {}: {}", candidate.display(), e);
+                        log::warn!(
+                            "Failed to auto-import signatures from {}: {}",
+                            candidate.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -503,7 +507,9 @@ impl FileScanner {
             let detection = details.primary_detection(engine.heuristic_threshold());
 
             // If no detection and it's an archive, scan contents
-            if detection.is_none() && config.scan.scan_archives && ArchiveScanner::is_supported_archive(path)
+            if detection.is_none()
+                && config.scan.scan_archives
+                && ArchiveScanner::is_supported_archive(path)
             {
                 return Self::scan_archive_sync(path, engine, config);
             }
@@ -540,10 +546,8 @@ impl FileScanner {
                         sig.category,
                         crate::core::types::DetectionMethod::Signature,
                     );
-                    detection.description = format!(
-                        "{} (in archive: {})",
-                        sig.description, entry.name
-                    );
+                    detection.description =
+                        format!("{} (in archive: {})", sig.description, entry.name);
                     detection.sha256 = Some(sha256);
                     found_detection = Some(detection);
                 }

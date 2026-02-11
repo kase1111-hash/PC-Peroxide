@@ -29,9 +29,8 @@ impl SignatureDatabase {
             })?;
         }
 
-        let conn = Connection::open(path).map_err(|e| {
-            Error::Database(format!("Failed to open database: {}", e))
-        })?;
+        let conn = Connection::open(path)
+            .map_err(|e| Error::Database(format!("Failed to open database: {}", e)))?;
 
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -50,9 +49,10 @@ impl SignatureDatabase {
 
     /// Initialize database schema.
     fn initialize_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         // Create metadata table
         conn.execute(
@@ -155,9 +155,10 @@ impl SignatureDatabase {
 
     /// Insert or update a signature.
     pub fn upsert_signature(&self, sig: &Signature) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -217,9 +218,10 @@ impl SignatureDatabase {
 
     /// Get a signature by ID.
     pub fn get_signature(&self, id: &str) -> Result<Option<Signature>> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let sig = conn
             .query_row(
@@ -253,9 +255,10 @@ impl SignatureDatabase {
 
     /// Look up a signature by SHA256 hash.
     pub fn lookup_sha256(&self, hash: &str) -> Result<Option<Signature>> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let hash_lower = hash.to_lowercase();
 
@@ -273,9 +276,10 @@ impl SignatureDatabase {
 
     /// Look up a signature by MD5 hash.
     pub fn lookup_md5(&self, hash: &str) -> Result<Option<Signature>> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let hash_lower = hash.to_lowercase();
 
@@ -303,9 +307,10 @@ impl SignatureDatabase {
 
     /// Get all pattern-based signatures.
     pub fn get_pattern_signatures(&self) -> Result<Vec<Signature>> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let mut stmt = conn
             .prepare(
@@ -368,9 +373,10 @@ impl SignatureDatabase {
 
         // Record version
         {
-            let conn = self.conn.lock().map_err(|e| {
-                Error::Database(format!("Failed to acquire database lock: {}", e))
-            })?;
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
             conn.execute(
                 "INSERT OR REPLACE INTO version_history (version, imported_at, signature_count)
@@ -407,9 +413,10 @@ impl SignatureDatabase {
 
     /// Get database information.
     pub fn info(&self) -> Result<DatabaseInfo> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let signature_count: u64 = conn
             .query_row("SELECT COUNT(*) FROM signatures", [], |row| row.get(0))
@@ -464,9 +471,10 @@ impl SignatureDatabase {
 
     /// Delete a signature by ID.
     pub fn delete_signature(&self, id: &str) -> Result<bool> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let affected = conn
             .execute("DELETE FROM signatures WHERE id = ?1", params![id])
@@ -477,9 +485,10 @@ impl SignatureDatabase {
 
     /// Enable or disable a signature.
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<bool> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let affected = conn
             .execute(
@@ -493,9 +502,10 @@ impl SignatureDatabase {
 
     /// Clear all signatures from the database.
     pub fn clear(&self) -> Result<u64> {
-        let conn = self.conn.lock().map_err(|e| {
-            Error::Database(format!("Failed to acquire database lock: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| Error::Database(format!("Failed to acquire database lock: {}", e)))?;
 
         let count: u64 = conn
             .query_row("SELECT COUNT(*) FROM signatures", [], |row| row.get(0))

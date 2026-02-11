@@ -59,7 +59,11 @@ impl QuarantineView {
     }
 
     /// Render quarantine summary.
-    fn render_summary(&mut self, ui: &mut Ui, items: &[QuarantineEntry]) -> Option<QuarantineAction> {
+    fn render_summary(
+        &mut self,
+        ui: &mut Ui,
+        items: &[QuarantineEntry],
+    ) -> Option<QuarantineAction> {
         ui.horizontal(|ui| {
             ui.add_space(20.0);
 
@@ -109,12 +113,9 @@ impl QuarantineView {
                 ui.vertical(|ui| {
                     if ui
                         .add(
-                            egui::Button::new(
-                                RichText::new("Clear All")
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(self.theme.danger)
-                            .min_size(Vec2::new(120.0, 36.0)),
+                            egui::Button::new(RichText::new("Clear All").color(Color32::WHITE))
+                                .fill(self.theme.danger)
+                                .min_size(Vec2::new(120.0, 36.0)),
                         )
                         .clicked()
                     {
@@ -179,10 +180,9 @@ impl QuarantineView {
                                         .size(18.0)
                                         .color(self.theme.success),
                                 );
-                                ui.label(
-                                    self.theme
-                                        .subheading("Threats will appear here after being quarantined."),
-                                );
+                                ui.label(self.theme.subheading(
+                                    "Threats will appear here after being quarantined.",
+                                ));
                             } else {
                                 ui.label(self.theme.subheading("No items match your search."));
                             }
@@ -212,8 +212,7 @@ impl QuarantineView {
 
                                 // Rows
                                 for item in filtered {
-                                    let is_selected =
-                                        self.selected_item.as_ref() == Some(&item.id);
+                                    let is_selected = self.selected_item.as_ref() == Some(&item.id);
                                     let bg_color = if is_selected {
                                         self.theme.primary.linear_multiply(0.2)
                                     } else {
@@ -225,7 +224,10 @@ impl QuarantineView {
                                             // Threat name
                                             ui.allocate_ui(Vec2::new(200.0, 25.0), |ui| {
                                                 if ui
-                                                    .selectable_label(is_selected, &item.threat_name)
+                                                    .selectable_label(
+                                                        is_selected,
+                                                        &item.threat_name,
+                                                    )
                                                     .clicked()
                                                 {
                                                     self.selected_item = if is_selected {
@@ -246,7 +248,9 @@ impl QuarantineView {
                                                     .monospace()
                                                     .size(11.0),
                                                 )
-                                                .on_hover_text(item.original_path.display().to_string());
+                                                .on_hover_text(
+                                                    item.original_path.display().to_string(),
+                                                );
                                             });
 
                                             // Date
@@ -382,8 +386,7 @@ impl QuarantineView {
                         ui.add_space(10.0);
                         ui.label("Are you sure you want to permanently delete this file?");
                         ui.label(
-                            RichText::new("This action cannot be undone.")
-                                .color(self.theme.danger),
+                            RichText::new("This action cannot be undone.").color(self.theme.danger),
                         );
                         ui.add_space(20.0);
 
@@ -395,8 +398,7 @@ impl QuarantineView {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Delete")
-                                            .color(Color32::WHITE),
+                                        RichText::new("Delete").color(Color32::WHITE),
                                     )
                                     .fill(self.theme.danger),
                                 )
@@ -421,8 +423,7 @@ impl QuarantineView {
                         ui.add_space(10.0);
                         ui.label("Are you sure you want to delete ALL quarantined files?");
                         ui.label(
-                            RichText::new("This action cannot be undone.")
-                                .color(self.theme.danger),
+                            RichText::new("This action cannot be undone.").color(self.theme.danger),
                         );
                         ui.add_space(20.0);
 
@@ -434,8 +435,7 @@ impl QuarantineView {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Delete All")
-                                            .color(Color32::WHITE),
+                                        RichText::new("Delete All").color(Color32::WHITE),
                                     )
                                     .fill(self.theme.danger),
                                 )

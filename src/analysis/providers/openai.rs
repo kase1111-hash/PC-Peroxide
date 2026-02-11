@@ -85,7 +85,12 @@ impl OpenAiProvider {
         &self,
         raw: &str,
         analysis_type: AnalysisType,
-    ) -> (String, f32, Option<MalwareClassification>, Vec<MitreMapping>) {
+    ) -> (
+        String,
+        f32,
+        Option<MalwareClassification>,
+        Vec<MitreMapping>,
+    ) {
         let mut explanation = raw.to_string();
         let mut confidence = 0.5;
         let mut classification = None;
@@ -191,7 +196,10 @@ impl OpenAiProvider {
     fn detect_intent(&self, lower: &str) -> ThreatIntent {
         if lower.contains("ransomware") {
             ThreatIntent::Ransomware
-        } else if lower.contains("backdoor") || lower.contains("remote access trojan") || lower.contains("rat") {
+        } else if lower.contains("backdoor")
+            || lower.contains("remote access trojan")
+            || lower.contains("rat")
+        {
             // Check for backdoor/RAT before generic trojan (RAT contains "trojan")
             ThreatIntent::Backdoor
         } else if lower.contains("trojan") {
@@ -200,7 +208,10 @@ impl OpenAiProvider {
             ThreatIntent::Worm
         } else if lower.contains("rootkit") {
             ThreatIntent::Rootkit
-        } else if lower.contains("spyware") || lower.contains("info stealer") || lower.contains("infostealer") {
+        } else if lower.contains("spyware")
+            || lower.contains("info stealer")
+            || lower.contains("infostealer")
+        {
             ThreatIntent::Spyware
         } else if lower.contains("keylogger") {
             ThreatIntent::Keylogger
@@ -222,9 +233,26 @@ impl OpenAiProvider {
     /// Detect malware family from response.
     fn detect_family(&self, lower: &str) -> Option<String> {
         let families = [
-            "emotet", "trickbot", "ryuk", "conti", "lockbit", "revil", "sodinokibi",
-            "wannacry", "petya", "notpetya", "maze", "dridex", "qbot", "icedid",
-            "cobalt strike", "mimikatz", "asyncrat", "remcos", "njrat", "agent tesla",
+            "emotet",
+            "trickbot",
+            "ryuk",
+            "conti",
+            "lockbit",
+            "revil",
+            "sodinokibi",
+            "wannacry",
+            "petya",
+            "notpetya",
+            "maze",
+            "dridex",
+            "qbot",
+            "icedid",
+            "cobalt strike",
+            "mimikatz",
+            "asyncrat",
+            "remcos",
+            "njrat",
+            "agent tesla",
         ];
 
         for family in families {
@@ -294,7 +322,10 @@ impl OpenAiProvider {
     /// Get MITRE technique info.
     fn get_mitre_info(&self, id: &str) -> (String, String) {
         match id {
-            "T1059" => ("Command and Scripting Interpreter".to_string(), "Execution".to_string()),
+            "T1059" => (
+                "Command and Scripting Interpreter".to_string(),
+                "Execution".to_string(),
+            ),
             "T1059.001" => ("PowerShell".to_string(), "Execution".to_string()),
             "T1059.003" => ("Windows Command Shell".to_string(), "Execution".to_string()),
             "T1059.005" => ("Visual Basic".to_string(), "Execution".to_string()),
@@ -302,12 +333,30 @@ impl OpenAiProvider {
             "T1059.007" => ("JavaScript".to_string(), "Execution".to_string()),
             "T1053.005" => ("Scheduled Task".to_string(), "Persistence".to_string()),
             "T1547.001" => ("Registry Run Keys".to_string(), "Persistence".to_string()),
-            "T1003" => ("OS Credential Dumping".to_string(), "Credential Access".to_string()),
-            "T1055" => ("Process Injection".to_string(), "Defense Evasion".to_string()),
-            "T1027" => ("Obfuscated Files".to_string(), "Defense Evasion".to_string()),
-            "T1071.001" => ("Web Protocols".to_string(), "Command and Control".to_string()),
-            "T1566.001" => ("Spearphishing Attachment".to_string(), "Initial Access".to_string()),
-            "T1486" => ("Data Encrypted for Impact".to_string(), "Impact".to_string()),
+            "T1003" => (
+                "OS Credential Dumping".to_string(),
+                "Credential Access".to_string(),
+            ),
+            "T1055" => (
+                "Process Injection".to_string(),
+                "Defense Evasion".to_string(),
+            ),
+            "T1027" => (
+                "Obfuscated Files".to_string(),
+                "Defense Evasion".to_string(),
+            ),
+            "T1071.001" => (
+                "Web Protocols".to_string(),
+                "Command and Control".to_string(),
+            ),
+            "T1566.001" => (
+                "Spearphishing Attachment".to_string(),
+                "Initial Access".to_string(),
+            ),
+            "T1486" => (
+                "Data Encrypted for Impact".to_string(),
+                "Impact".to_string(),
+            ),
             _ => ("Unknown Technique".to_string(), "Unknown".to_string()),
         }
     }

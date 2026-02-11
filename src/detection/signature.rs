@@ -230,9 +230,8 @@ impl SignatureFile {
 
     /// Load signatures from a JSON file.
     pub fn load(path: &std::path::Path) -> crate::core::error::Result<Self> {
-        let contents = std::fs::read_to_string(path).map_err(|e| {
-            crate::core::error::Error::file_read(path, e)
-        })?;
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| crate::core::error::Error::file_read(path, e))?;
         serde_json::from_str(&contents).map_err(|e| {
             crate::core::error::Error::SignatureLoad(format!(
                 "Failed to parse signature file: {}",
@@ -245,13 +244,10 @@ impl SignatureFile {
     pub fn save(&self, path: &std::path::Path) -> crate::core::error::Result<()> {
         let contents = serde_json::to_string_pretty(self)?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                crate::core::error::Error::file_write(path, e)
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| crate::core::error::Error::file_write(path, e))?;
         }
-        std::fs::write(path, contents).map_err(|e| {
-            crate::core::error::Error::file_write(path, e)
-        })
+        std::fs::write(path, contents).map_err(|e| crate::core::error::Error::file_write(path, e))
     }
 
     /// Get the number of enabled signatures.
@@ -290,7 +286,10 @@ mod tests {
     fn test_signature_type_parsing() {
         assert_eq!(SignatureType::parse("hash"), Some(SignatureType::Hash));
         assert_eq!(SignatureType::parse("SHA256"), Some(SignatureType::Hash));
-        assert_eq!(SignatureType::parse("pattern"), Some(SignatureType::Pattern));
+        assert_eq!(
+            SignatureType::parse("pattern"),
+            Some(SignatureType::Pattern)
+        );
         assert_eq!(SignatureType::parse("invalid"), None);
     }
 

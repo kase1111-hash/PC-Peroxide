@@ -203,12 +203,16 @@ impl EncryptionManager {
         // Parse header
         let header_size = VAULT_MAGIC.len() + 1 + 8; // magic + version + size
         if data.len() < header_size {
-            return Err(Error::Decryption("Invalid vault file: too short".to_string()));
+            return Err(Error::Decryption(
+                "Invalid vault file: too short".to_string(),
+            ));
         }
 
         // Verify magic
         if &data[..VAULT_MAGIC.len()] != VAULT_MAGIC {
-            return Err(Error::Decryption("Invalid vault file: bad magic".to_string()));
+            return Err(Error::Decryption(
+                "Invalid vault file: bad magic".to_string(),
+            ));
         }
 
         // Check version

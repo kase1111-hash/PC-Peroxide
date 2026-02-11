@@ -341,11 +341,8 @@ impl TaskScanner {
 
     /// Analyze a task and convert to persistence entry.
     fn analyze_task(&self, task: &ScheduledTask) -> PersistenceEntry {
-        let mut entry = PersistenceEntry::new(
-            PersistenceType::ScheduledTask,
-            &task.name,
-            &task.full_path,
-        );
+        let mut entry =
+            PersistenceEntry::new(PersistenceType::ScheduledTask, &task.name, &task.full_path);
 
         if task.command.is_some() {
             if let Some(exe_path) = task.get_executable_path() {
@@ -512,8 +509,8 @@ mod tests {
 
     #[test]
     fn test_scheduled_task_command() {
-        let task = ScheduledTask::new("Test", "\\")
-            .with_command("powershell.exe -encodedcommand abc123");
+        let task =
+            ScheduledTask::new("Test", "\\").with_command("powershell.exe -encodedcommand abc123");
 
         assert!(task.command.is_some());
         assert_eq!(

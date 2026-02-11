@@ -153,39 +153,129 @@ impl SuspiciousPortDetector {
     fn add_c2_ports(ports: &mut HashMap<u16, KnownPort>) {
         let c2_ports = [
             // Cobalt Strike default ports
-            (50050, "Cobalt Strike", PortCategory::C2, "Cobalt Strike team server default", 90),
+            (
+                50050,
+                "Cobalt Strike",
+                PortCategory::C2,
+                "Cobalt Strike team server default",
+                90,
+            ),
             // Metasploit
-            (4444, "Meterpreter", PortCategory::Rat, "Metasploit Meterpreter default", 85),
-            (4445, "Meterpreter", PortCategory::Rat, "Metasploit Meterpreter alternate", 85),
+            (
+                4444,
+                "Meterpreter",
+                PortCategory::Rat,
+                "Metasploit Meterpreter default",
+                85,
+            ),
+            (
+                4445,
+                "Meterpreter",
+                PortCategory::Rat,
+                "Metasploit Meterpreter alternate",
+                85,
+            ),
             // njRAT
             (5552, "njRAT", PortCategory::Rat, "njRAT default port", 90),
             // DarkComet
-            (1604, "DarkComet", PortCategory::Rat, "DarkComet RAT default", 90),
+            (
+                1604,
+                "DarkComet",
+                PortCategory::Rat,
+                "DarkComet RAT default",
+                90,
+            ),
             // Poison Ivy
-            (3460, "Poison Ivy", PortCategory::Rat, "Poison Ivy RAT default", 90),
+            (
+                3460,
+                "Poison Ivy",
+                PortCategory::Rat,
+                "Poison Ivy RAT default",
+                90,
+            ),
             // BlackShades
-            (3333, "BlackShades", PortCategory::Rat, "BlackShades RAT port", 85),
+            (
+                3333,
+                "BlackShades",
+                PortCategory::Rat,
+                "BlackShades RAT port",
+                85,
+            ),
             // Gh0st RAT
-            (8000, "Gh0st RAT", PortCategory::Rat, "Gh0st RAT default", 80),
+            (
+                8000,
+                "Gh0st RAT",
+                PortCategory::Rat,
+                "Gh0st RAT default",
+                80,
+            ),
             // Quasar RAT
-            (4782, "Quasar RAT", PortCategory::Rat, "Quasar RAT default", 85),
+            (
+                4782,
+                "Quasar RAT",
+                PortCategory::Rat,
+                "Quasar RAT default",
+                85,
+            ),
             // AsyncRAT
             (6606, "AsyncRAT", PortCategory::Rat, "AsyncRAT default", 85),
-            (7707, "AsyncRAT", PortCategory::Rat, "AsyncRAT alternate", 85),
-            (8808, "AsyncRAT", PortCategory::Rat, "AsyncRAT alternate", 85),
+            (
+                7707,
+                "AsyncRAT",
+                PortCategory::Rat,
+                "AsyncRAT alternate",
+                85,
+            ),
+            (
+                8808,
+                "AsyncRAT",
+                PortCategory::Rat,
+                "AsyncRAT alternate",
+                85,
+            ),
             // Emotet
-            (8080, "Emotet", PortCategory::C2, "Emotet C2 common (shares with HTTP)", 50),
+            (
+                8080,
+                "Emotet",
+                PortCategory::C2,
+                "Emotet C2 common (shares with HTTP)",
+                50,
+            ),
             (7080, "Emotet", PortCategory::C2, "Emotet C2 common", 75),
             // TrickBot
             (449, "TrickBot", PortCategory::C2, "TrickBot C2 port", 80),
             // Qbot
-            (443, "Qbot", PortCategory::C2, "Qbot C2 (shares with HTTPS)", 30),
+            (
+                443,
+                "Qbot",
+                PortCategory::C2,
+                "Qbot C2 (shares with HTTPS)",
+                30,
+            ),
             (995, "Qbot", PortCategory::C2, "Qbot C2 alternate", 50),
             // Empire
-            (443, "Empire", PortCategory::C2, "Empire C2 default (shares with HTTPS)", 30),
+            (
+                443,
+                "Empire",
+                PortCategory::C2,
+                "Empire C2 default (shares with HTTPS)",
+                30,
+            ),
             // Covenant
-            (80, "Covenant", PortCategory::C2, "Covenant C2 (shares with HTTP)", 25),
-            (443, "Covenant", PortCategory::C2, "Covenant C2 (shares with HTTPS)", 25),
+            (
+                80,
+                "Covenant",
+                PortCategory::C2,
+                "Covenant C2 (shares with HTTP)",
+                25,
+            ),
+            (
+                443,
+                "Covenant",
+                PortCategory::C2,
+                "Covenant C2 (shares with HTTPS)",
+                25,
+            ),
         ];
 
         for (port, service, category, desc, severity) in c2_ports {
@@ -212,7 +302,12 @@ impl SuspiciousPortDetector {
             (6697, "IRC-SSL", "IRC over SSL", 50),
             (1080, "SOCKS", "SOCKS proxy (potential tunnel)", 45),
             (1337, "Leet", "Common backdoor port", 80),
-            (65535, "High Port", "Highest port number (sometimes used by malware)", 40),
+            (
+                65535,
+                "High Port",
+                "Highest port number (sometimes used by malware)",
+                40,
+            ),
             (54321, "BO2K", "Back Orifice 2000 default", 90),
             (27374, "SubSeven", "SubSeven trojan default", 95),
             (27444, "Trinoo", "Trinoo DDoS daemon", 85),
@@ -238,7 +333,12 @@ impl SuspiciousPortDetector {
     fn add_miner_ports(ports: &mut HashMap<u16, KnownPort>) {
         let miner_ports = [
             (3333, "Stratum", "Stratum mining protocol", 75),
-            (4444, "Stratum", "Stratum mining (shared with Meterpreter)", 75),
+            (
+                4444,
+                "Stratum",
+                "Stratum mining (shared with Meterpreter)",
+                75,
+            ),
             (5555, "Stratum", "Stratum mining alternate", 75),
             (7777, "Stratum", "Stratum mining alternate", 70),
             (8888, "Stratum", "Stratum mining alternate", 70),

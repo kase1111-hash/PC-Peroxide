@@ -168,7 +168,9 @@ impl MalwareAnalyzer {
 
         let analysis_content = content.unwrap_or_else(|| detection.description.clone());
 
-        let response = self.analyze_file(&detection.path, &analysis_content).await?;
+        let response = self
+            .analyze_file(&detection.path, &analysis_content)
+            .await?;
 
         // Update detection with LLM insights if confidence is high enough
         if response.confidence >= self.confidence_threshold {
@@ -265,7 +267,10 @@ mod tests {
 
     #[test]
     fn test_intent_to_severity() {
-        assert_eq!(intent_to_severity(&ThreatIntent::Ransomware), Severity::Critical);
+        assert_eq!(
+            intent_to_severity(&ThreatIntent::Ransomware),
+            Severity::Critical
+        );
         assert_eq!(intent_to_severity(&ThreatIntent::Adware), Severity::Low);
         assert_eq!(intent_to_severity(&ThreatIntent::Unknown), Severity::Medium);
     }

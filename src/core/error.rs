@@ -365,9 +365,7 @@ impl Error {
             Error::NetworkTimeout { .. } | Error::NetworkRetryExhausted { .. } => {
                 Some("Check your network connection and try again")
             }
-            Error::LockPoisoned { .. } => {
-                Some("Internal error: restart the application")
-            }
+            Error::LockPoisoned { .. } => Some("Internal error: restart the application"),
             Error::ScanCancelled => Some("Scan was interrupted by user request"),
             Error::QuarantineItemNotFound(_) => {
                 Some("The quarantine item may have been deleted or restored")
@@ -430,16 +428,15 @@ impl Error {
                 ErrorCategory::Detection
             }
 
-            Error::LockPoisoned { .. }
-            | Error::ChannelSend { .. }
-            | Error::ChannelRecv { .. } => ErrorCategory::Concurrency,
+            Error::LockPoisoned { .. } | Error::ChannelSend { .. } | Error::ChannelRecv { .. } => {
+                ErrorCategory::Concurrency
+            }
 
             Error::JsonSerialize(_) => ErrorCategory::Serialization,
 
-            Error::Custom(_)
-            | Error::NotSupported(_)
-            | Error::Internal(_)
-            | Error::Other(_) => ErrorCategory::Other,
+            Error::Custom(_) | Error::NotSupported(_) | Error::Internal(_) | Error::Other(_) => {
+                ErrorCategory::Other
+            }
         }
     }
 }

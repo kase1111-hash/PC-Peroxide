@@ -294,10 +294,9 @@ impl QuarantineMetadata {
 
     /// Mark an item as restored (removed from quarantine).
     pub fn remove(&self, id: &str) -> Result<bool> {
-        let rows = self.conn.execute(
-            "DELETE FROM quarantine_items WHERE id = ?1",
-            [id],
-        )?;
+        let rows = self
+            .conn
+            .execute("DELETE FROM quarantine_items WHERE id = ?1", [id])?;
         Ok(rows > 0)
     }
 
@@ -321,11 +320,11 @@ impl QuarantineMetadata {
 
     /// Get count of quarantined items.
     pub fn count(&self) -> Result<usize> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM quarantine_items",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM quarantine_items", [], |row| {
+                    row.get(0)
+                })?;
         Ok(count as usize)
     }
 
@@ -464,7 +463,9 @@ mod tests {
         let metadata = QuarantineMetadata::in_memory().unwrap();
         metadata.add(&create_test_item("notes-test")).unwrap();
 
-        metadata.update_notes("notes-test", Some("Updated notes")).unwrap();
+        metadata
+            .update_notes("notes-test", Some("Updated notes"))
+            .unwrap();
 
         let item = metadata.get("notes-test").unwrap().unwrap();
         assert_eq!(item.notes, Some("Updated notes".to_string()));

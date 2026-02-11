@@ -33,7 +33,9 @@ impl HashCalculator {
         let mut buffer = [0u8; BUFFER_SIZE];
 
         loop {
-            let bytes_read = reader.read(&mut buffer).map_err(|e| Error::file_read(path, e))?;
+            let bytes_read = reader
+                .read(&mut buffer)
+                .map_err(|e| Error::file_read(path, e))?;
             if bytes_read == 0 {
                 break;
             }
@@ -51,7 +53,9 @@ impl HashCalculator {
         let mut buffer = [0u8; BUFFER_SIZE];
 
         loop {
-            let bytes_read = reader.read(&mut buffer).map_err(|e| Error::file_read(path, e))?;
+            let bytes_read = reader
+                .read(&mut buffer)
+                .map_err(|e| Error::file_read(path, e))?;
             if bytes_read == 0 {
                 break;
             }
@@ -73,7 +77,9 @@ impl HashCalculator {
         let mut buffer = [0u8; BUFFER_SIZE];
 
         loop {
-            let bytes_read = reader.read(&mut buffer).map_err(|e| Error::file_read(path, e))?;
+            let bytes_read = reader
+                .read(&mut buffer)
+                .map_err(|e| Error::file_read(path, e))?;
             if bytes_read == 0 {
                 break;
             }
