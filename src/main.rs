@@ -6,7 +6,9 @@ use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
 use pc_peroxide::detection::SignatureDatabase;
-use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
+use pc_peroxide::quarantine::{
+    get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType,
+};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
     PersistenceScanner, ProcessScanner, ScanResultStore,
@@ -70,23 +72,42 @@ async fn run() -> Result<()> {
             no_action,
             yara,
         }) => {
-            run_scan(config, quick, full, path, output, export_format, no_action, yara, cli.format, cli.silent).await
+            run_scan(
+                config,
+                quick,
+                full,
+                path,
+                output,
+                export_format,
+                no_action,
+                yara,
+                cli.format,
+                cli.silent,
+            )
+            .await
         }
         Some(Commands::Quarantine { action }) => run_quarantine(action, cli.format).await,
         Some(Commands::Update { force, import }) => run_update(force, import).await,
         Some(Commands::Config { action }) => run_config(action, &config),
         Some(Commands::History { action }) => run_history(action, cli.format),
         Some(Commands::Persistence { all, r#type }) => run_persistence(all, r#type, cli.format),
-        Some(Commands::Processes { all, pid, memory, threshold }) => {
-            run_processes(all, pid, memory, threshold, cli.format)
-        }
+        Some(Commands::Processes {
+            all,
+            pid,
+            memory,
+            threshold,
+        }) => run_processes(all, pid, memory, threshold, cli.format),
         Some(Commands::Whitelist { action }) => run_whitelist(action, cli.format),
-        Some(Commands::Network { all, listening, pid }) => {
-            run_network(all, listening, pid, cli.format)
-        }
-        Some(Commands::Browser { all, browser, hijacks_only }) => {
-            run_browser(all, browser, hijacks_only, cli.format)
-        }
+        Some(Commands::Network {
+            all,
+            listening,
+            pid,
+        }) => run_network(all, listening, pid, cli.format),
+        Some(Commands::Browser {
+            all,
+            browser,
+            hijacks_only,
+        }) => run_browser(all, browser, hijacks_only, cli.format),
         Some(Commands::Info) => run_info(&config),
         None => {
             // No command specified, show help
@@ -227,7 +248,12 @@ async fn run_scan(
                 println!();
                 println!("=== Detections ===");
                 for det in &summary.detections {
-                    println!("  [{}] {} - {}", det.severity, det.threat_name, det.path.display());
+                    println!(
+                        "  [{}] {} - {}",
+                        det.severity,
+                        det.threat_name,
+                        det.path.display()
+                    );
                 }
             }
         }
@@ -316,7 +342,10 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
                         println!("  Category:  {}", item.category);
                         println!("  Path:      {}", item.original_path.display());
                         println!("  Size:      {}", format_bytes(item.original_size));
-                        println!("  Time:      {}", item.quarantine_time.format("%Y-%m-%d %H:%M:%S"));
+                        println!(
+                            "  Time:      {}",
+                            item.quarantine_time.format("%Y-%m-%d %H:%M:%S")
+                        );
                         println!();
                     }
                 }
@@ -353,7 +382,10 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
                     println!("Quarantine is already empty.");
                     return Ok(());
                 }
-                println!("This will permanently delete {} quarantined item(s).", count);
+                println!(
+                    "This will permanently delete {} quarantined item(s).",
+                    count
+                );
                 println!("Use --yes to confirm.");
                 return Ok(());
             }
@@ -385,7 +417,10 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
                 OutputFormat::Text => {
                     println!("=== Quarantine Statistics ===");
                     println!("Items:            {}", stats.total_count);
-                    println!("Original Size:    {}", format_bytes(stats.total_original_size));
+                    println!(
+                        "Original Size:    {}",
+                        format_bytes(stats.total_original_size)
+                    );
                     println!("Vault Size:       {}", format_bytes(stats.vault_size));
                     println!("Vault Location:   {}", get_quarantine_path().display());
 
@@ -418,7 +453,9 @@ async fn run_update(force: bool, import: Option<std::path::PathBuf>) -> Result<(
         log::info!("Forcing update...");
     }
     // TODO: Implement online update in a future phase
-    println!("Online update not yet implemented. Use --import <file> to import signatures from a file.");
+    println!(
+        "Online update not yet implemented. Use --import <file> to import signatures from a file."
+    );
     Ok(())
 }
 
@@ -458,8 +495,8 @@ fn run_config(action: ConfigAction, config: &Config) -> Result<()> {
             }
 
             // Parse value as JSON literal, fall back to string
-            let parsed: serde_json::Value = serde_json::from_str(&value)
-                .unwrap_or(serde_json::Value::String(value.clone()));
+            let parsed: serde_json::Value =
+                serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value.clone()));
             target[*field] = parsed;
 
             // Deserialize back, validate, and save
@@ -500,7 +537,10 @@ fn run_history(action: HistoryAction, format: OutputFormat) -> Result<()> {
                 }
                 OutputFormat::Text => {
                     println!("=== Recent Scans ===");
-                    println!("{:<36} {:>10} {:>8} {:>8} {:>8}", "Scan ID", "Type", "Files", "Threats", "Status");
+                    println!(
+                        "{:<36} {:>10} {:>8} {:>8} {:>8}",
+                        "Scan ID", "Type", "Files", "Threats", "Status"
+                    );
                     println!("{}", "-".repeat(80));
                     for scan in scans {
                         println!(
@@ -516,64 +556,71 @@ fn run_history(action: HistoryAction, format: OutputFormat) -> Result<()> {
             }
         }
 
-        HistoryAction::Show { id } => {
-            match store.load_scan(&id)? {
-                Some(scan) => {
-                    match format {
-                        OutputFormat::Json => {
-                            println!("{}", serde_json::to_string_pretty(&scan)?);
-                        }
-                        OutputFormat::Text => {
-                            println!("=== Scan Details ===");
-                            println!("Scan ID:         {}", scan.scan_id);
-                            println!("Type:            {}", scan.scan_type);
-                            println!("Status:          {:?}", scan.status);
-                            println!("Start Time:      {}", scan.start_time);
-                            if let Some(end) = scan.end_time {
-                                println!("End Time:        {}", end);
-                            }
-                            println!("Files Scanned:   {}", scan.files_scanned);
-                            println!("Bytes Scanned:   {}", format_bytes(scan.bytes_scanned));
-                            println!("Threats Found:   {}", scan.threats_found);
-                            println!("Errors:          {}", scan.errors);
+        HistoryAction::Show { id } => match store.load_scan(&id)? {
+            Some(scan) => match format {
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&scan)?);
+                }
+                OutputFormat::Text => {
+                    println!("=== Scan Details ===");
+                    println!("Scan ID:         {}", scan.scan_id);
+                    println!("Type:            {}", scan.scan_type);
+                    println!("Status:          {:?}", scan.status);
+                    println!("Start Time:      {}", scan.start_time);
+                    if let Some(end) = scan.end_time {
+                        println!("End Time:        {}", end);
+                    }
+                    println!("Files Scanned:   {}", scan.files_scanned);
+                    println!("Bytes Scanned:   {}", format_bytes(scan.bytes_scanned));
+                    println!("Threats Found:   {}", scan.threats_found);
+                    println!("Errors:          {}", scan.errors);
 
-                            if !scan.detections.is_empty() {
-                                println!();
-                                println!("=== Detections ===");
-                                for det in &scan.detections {
-                                    println!("  [{}] {} - {}", det.severity, det.threat_name, det.path.display());
-                                    if !det.description.is_empty() {
-                                        println!("      {}", det.description);
-                                    }
-                                }
+                    if !scan.detections.is_empty() {
+                        println!();
+                        println!("=== Detections ===");
+                        for det in &scan.detections {
+                            println!(
+                                "  [{}] {} - {}",
+                                det.severity,
+                                det.threat_name,
+                                det.path.display()
+                            );
+                            if !det.description.is_empty() {
+                                println!("      {}", det.description);
                             }
                         }
                     }
                 }
-                None => {
-                    println!("Scan not found: {}", id);
-                }
+            },
+            None => {
+                println!("Scan not found: {}", id);
             }
-        }
+        },
 
         HistoryAction::Stats => {
             let stats = store.get_statistics()?;
 
             match format {
                 OutputFormat::Json => {
-                    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                        "total_scans": stats.total_scans,
-                        "total_files_scanned": stats.total_files_scanned,
-                        "total_bytes_scanned": stats.total_bytes_scanned,
-                        "total_threats_found": stats.total_threats_found,
-                        "last_scan_time": stats.last_scan_time.map(|t| t.to_rfc3339()),
-                    }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "total_scans": stats.total_scans,
+                            "total_files_scanned": stats.total_files_scanned,
+                            "total_bytes_scanned": stats.total_bytes_scanned,
+                            "total_threats_found": stats.total_threats_found,
+                            "last_scan_time": stats.last_scan_time.map(|t| t.to_rfc3339()),
+                        }))?
+                    );
                 }
                 OutputFormat::Text => {
                     println!("=== Scan Statistics ===");
                     println!("Total Scans:         {}", stats.total_scans);
                     println!("Total Files Scanned: {}", stats.total_files_scanned);
-                    println!("Total Data Scanned:  {}", format_bytes(stats.total_bytes_scanned));
+                    println!(
+                        "Total Data Scanned:  {}",
+                        format_bytes(stats.total_bytes_scanned)
+                    );
                     println!("Total Threats Found: {}", stats.total_threats_found);
                     if let Some(last) = stats.last_scan_time {
                         println!("Last Scan:           {}", last);
@@ -582,7 +629,11 @@ fn run_history(action: HistoryAction, format: OutputFormat) -> Result<()> {
             }
         }
 
-        HistoryAction::Export { id, output, format: export_fmt } => {
+        HistoryAction::Export {
+            id,
+            output,
+            format: export_fmt,
+        } => {
             // Get the scan to export
             let scan = if id == "latest" {
                 // Get the most recent scan
@@ -633,13 +684,22 @@ fn run_info(config: &Config) -> Result<()> {
     println!("PC-Peroxide - Malware Detection and Removal Utility");
     println!();
     println!("Version:          {}", env!("CARGO_PKG_VERSION"));
-    println!("Config Path:      {}", Config::default_config_path().display());
+    println!(
+        "Config Path:      {}",
+        Config::default_config_path().display()
+    );
     println!("Data Directory:   {}", Config::data_dir().display());
     println!("Log Directory:    {}", config.logging.log_dir().display());
-    println!("Quarantine Path:  {}", config.quarantine.quarantine_dir().display());
+    println!(
+        "Quarantine Path:  {}",
+        config.quarantine.quarantine_dir().display()
+    );
     println!();
     println!("Detection Settings:");
-    println!("  Heuristic:      {:?}", config.detection.heuristic_sensitivity);
+    println!(
+        "  Heuristic:      {:?}",
+        config.detection.heuristic_sensitivity
+    );
     println!("  YARA Enabled:   {}", config.detection.enable_yara);
     println!("  PUP Detection:  {}", config.detection.pup_detection);
     println!();
@@ -669,16 +729,18 @@ fn run_persistence(
     let entries: Vec<_> = match type_filter {
         Some(PersistenceTypeFilter::Registry) => entries
             .into_iter()
-            .filter(|e| matches!(
-                e.persistence_type,
-                pc_peroxide::scanner::PersistenceType::RegistryRun
-                    | pc_peroxide::scanner::PersistenceType::Service
-                    | pc_peroxide::scanner::PersistenceType::Ifeo
-                    | pc_peroxide::scanner::PersistenceType::AppInitDll
-                    | pc_peroxide::scanner::PersistenceType::ShellExtension
-                    | pc_peroxide::scanner::PersistenceType::Winlogon
-                    | pc_peroxide::scanner::PersistenceType::LsaPackage
-            ))
+            .filter(|e| {
+                matches!(
+                    e.persistence_type,
+                    pc_peroxide::scanner::PersistenceType::RegistryRun
+                        | pc_peroxide::scanner::PersistenceType::Service
+                        | pc_peroxide::scanner::PersistenceType::Ifeo
+                        | pc_peroxide::scanner::PersistenceType::AppInitDll
+                        | pc_peroxide::scanner::PersistenceType::ShellExtension
+                        | pc_peroxide::scanner::PersistenceType::Winlogon
+                        | pc_peroxide::scanner::PersistenceType::LsaPackage
+                )
+            })
             .collect(),
         Some(PersistenceTypeFilter::Startup) => entries
             .into_iter()
@@ -746,7 +808,11 @@ fn run_persistence(
                 println!("  Location: {}", entry.location);
 
                 if let Some(ref path) = entry.path {
-                    let exists = if entry.file_exists { "exists" } else { "MISSING" };
+                    let exists = if entry.file_exists {
+                        "exists"
+                    } else {
+                        "MISSING"
+                    };
                     println!("  Path: {} ({})", path.display(), exists);
                 }
 
@@ -762,7 +828,10 @@ fn run_persistence(
             }
 
             if suspicious_count > 0 {
-                println!("Warning: {} suspicious persistence mechanism(s) found!", suspicious_count);
+                println!(
+                    "Warning: {} suspicious persistence mechanism(s) found!",
+                    suspicious_count
+                );
                 println!("Review each entry carefully before taking action.");
             }
         }
@@ -843,7 +912,9 @@ fn run_processes(
                 } else {
                     println!("No suspicious processes found (threshold: {}).", threshold);
                     println!();
-                    println!("Use --all to show all processes, or --threshold to adjust sensitivity.");
+                    println!(
+                        "Use --all to show all processes, or --threshold to adjust sensitivity."
+                    );
                 }
                 return Ok(());
             }
@@ -876,7 +947,10 @@ fn run_processes(
                 if !result.indicators.is_empty() {
                     println!("  Indicators:");
                     for indicator in &result.indicators {
-                        println!("    - {} (severity: {})", indicator.name, indicator.severity);
+                        println!(
+                            "    - {} (severity: {})",
+                            indicator.name, indicator.severity
+                        );
                         if !indicator.description.is_empty() {
                             println!("      {}", indicator.description);
                         }
@@ -886,12 +960,16 @@ fn run_processes(
                 if !result.pattern_matches.is_empty() {
                     println!("  Memory Pattern Matches:");
                     for m in &result.pattern_matches {
-                        println!("    - {} at 0x{:x} (severity: {})", m.pattern_name, m.address, m.severity);
+                        println!(
+                            "    - {} at 0x{:x} (severity: {})",
+                            m.pattern_name, m.address, m.severity
+                        );
                     }
                 }
 
                 if result.memory_stats.region_count > 0 {
-                    println!("  Memory: {} regions, {} executable, {} RWX",
+                    println!(
+                        "  Memory: {} regions, {} executable, {} RWX",
                         result.memory_stats.region_count,
                         result.memory_stats.executable_regions,
                         result.memory_stats.rwx_regions
@@ -902,7 +980,10 @@ fn run_processes(
             }
 
             if suspicious_count > 0 {
-                println!("Warning: {} suspicious process(es) found!", suspicious_count);
+                println!(
+                    "Warning: {} suspicious process(es) found!",
+                    suspicious_count
+                );
                 println!("Review each process carefully before taking action.");
             }
         }
@@ -944,8 +1025,11 @@ fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
                 }
                 OutputFormat::Text => {
                     println!("=== Whitelist Entries ===");
-                    println!("Total: {} ({} active)", entries.len(),
-                        entries.iter().filter(|e| e.active).count());
+                    println!(
+                        "Total: {} ({} active)",
+                        entries.len(),
+                        entries.iter().filter(|e| e.active).count()
+                    );
                     println!();
 
                     for entry in &entries {
@@ -959,7 +1043,10 @@ fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
                         println!("  ID:      {}", entry.id);
                         println!("  Pattern: {}", entry.pattern);
                         println!("  Reason:  {}", entry.reason);
-                        println!("  Created: {}", entry.created_at.format("%Y-%m-%d %H:%M:%S"));
+                        println!(
+                            "  Created: {}",
+                            entry.created_at.format("%Y-%m-%d %H:%M:%S")
+                        );
                         println!();
                     }
                 }
@@ -1087,8 +1174,10 @@ fn run_network(
             println!("Total: {} ({} suspicious)", results.len(), suspicious_count);
             println!();
 
-            println!("{:<6} {:<22} {:<22} {:>12} {:>8}",
-                "Proto", "Local Address", "Remote Address", "State", "PID");
+            println!(
+                "{:<6} {:<22} {:<22} {:>12} {:>8}",
+                "Proto", "Local Address", "Remote Address", "State", "PID"
+            );
             println!("{}", "-".repeat(78));
 
             for r in &results {
@@ -1100,25 +1189,35 @@ fn run_network(
                 };
                 let proto = format!("{}", conn.conn_type);
                 let state = format!("{}", conn.state);
-                let pid_str = conn.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
+                let pid_str = conn
+                    .pid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "-".to_string());
 
                 let suspicious_marker = if r.suspicious { "[!]" } else { "" };
-                println!("{:<6} {:<22} {:<22} {:>12} {:>8} {}",
-                    proto, local, remote, state, pid_str, suspicious_marker);
+                println!(
+                    "{:<6} {:<22} {:<22} {:>12} {:>8} {}",
+                    proto, local, remote, state, pid_str, suspicious_marker
+                );
 
                 if let Some(ref name) = conn.process_name {
                     println!("       Process: {}", name);
                 }
 
                 if r.suspicious {
-                    println!("       Port Category: {:?} (severity: {})",
-                        r.local_port_info.category, r.severity);
+                    println!(
+                        "       Port Category: {:?} (severity: {})",
+                        r.local_port_info.category, r.severity
+                    );
                 }
             }
 
             if suspicious_count > 0 {
                 println!();
-                println!("Warning: {} suspicious connection(s) detected!", suspicious_count);
+                println!(
+                    "Warning: {} suspicious connection(s) detected!",
+                    suspicious_count
+                );
                 println!("Review connections on these ports carefully.");
             }
         }
@@ -1145,11 +1244,13 @@ fn run_browser(
         Some(BrowserFilter::Firefox) => scanner.scan_browser(BrowserType::Firefox)?,
         Some(BrowserFilter::Brave) => scanner.scan_browser(BrowserType::Brave)?,
         Some(BrowserFilter::Opera) => scanner.scan_browser(BrowserType::Opera)?,
-        None => if show_all {
-            scanner.scan_all()?
-        } else {
-            scanner.scan_suspicious()?
-        },
+        None => {
+            if show_all {
+                scanner.scan_all()?
+            } else {
+                scanner.scan_suspicious()?
+            }
+        }
     };
 
     match format {
@@ -1192,8 +1293,10 @@ fn run_browser(
                 println!();
 
                 for hijack in &result.hijacks {
-                    println!("[{:?}] {:?} - Severity: {}",
-                        hijack.browser, hijack.hijack_type, hijack.severity);
+                    println!(
+                        "[{:?}] {:?} - Severity: {}",
+                        hijack.browser, hijack.hijack_type, hijack.severity
+                    );
                     println!("  Value: {}", hijack.current_value);
                     println!("  {}", hijack.description);
                     println!();
@@ -1214,9 +1317,7 @@ fn run_browser(
                 result
                     .extensions
                     .into_iter()
-                    .filter(|ext| {
-                        !matches!(ext.risk, pc_peroxide::scanner::ExtensionRisk::None)
-                    })
+                    .filter(|ext| !matches!(ext.risk, pc_peroxide::scanner::ExtensionRisk::None))
                     .collect()
             };
 
@@ -1237,7 +1338,11 @@ fn run_browser(
 
                 println!();
                 println!("{}", title);
-                println!("Total: {} ({} suspicious)", extensions.len(), result.suspicious_extensions);
+                println!(
+                    "Total: {} ({} suspicious)",
+                    extensions.len(),
+                    result.suspicious_extensions
+                );
                 println!();
 
                 for ext in &extensions {
@@ -1271,7 +1376,12 @@ fn run_browser(
                     }
 
                     if !ext.permissions.is_empty() {
-                        let perms: Vec<String> = ext.permissions.iter().take(5).map(|p| format!("{:?}", p)).collect();
+                        let perms: Vec<String> = ext
+                            .permissions
+                            .iter()
+                            .take(5)
+                            .map(|p| format!("{:?}", p))
+                            .collect();
                         let more = if ext.permissions.len() > 5 {
                             format!(" (+{} more)", ext.permissions.len() - 5)
                         } else {
