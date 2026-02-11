@@ -498,7 +498,9 @@ impl FileScanner {
     ) -> Result<Option<Detection>> {
         // Use detection engine if available
         if let Some(engine) = engine {
-            let detection = engine.scan_file(path)?;
+            // Run all detection engines and pick the highest-priority result
+            let details = engine.scan_file_detailed(path)?;
+            let detection = details.primary_detection(engine.heuristic_threshold());
 
             // If no detection and it's an archive, scan contents
             if detection.is_none() && config.scan.scan_archives && ArchiveScanner::is_supported_archive(path)

@@ -297,6 +297,11 @@ impl DetectionEngine {
         self.heuristic_threshold = threshold;
     }
 
+    /// Get the heuristic detection threshold.
+    pub fn heuristic_threshold(&self) -> u8 {
+        self.heuristic_threshold
+    }
+
     /// Scan a file for threats using all detection methods.
     pub fn scan_file(&self, path: &Path) -> Result<Option<Detection>> {
         // 1. Hash-based detection (fastest, check first)
