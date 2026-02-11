@@ -57,7 +57,12 @@ impl FileScanner {
         let detection_engine = match SignatureDatabase::open_default() {
             Ok(db) => {
                 log::debug!("Signature database loaded");
-                Some(Arc::new(DetectionEngine::new(Arc::new(db))))
+                Some(Arc::new(DetectionEngine::with_settings(
+                    Arc::new(db),
+                    config.detection.heuristic_threshold,
+                    true, // heuristic always enabled
+                    config.detection.enable_yara,
+                )))
             }
             Err(e) => {
                 log::warn!("Failed to load signature database: {}", e);

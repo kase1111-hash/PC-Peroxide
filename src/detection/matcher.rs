@@ -272,13 +272,18 @@ impl DetectionEngine {
         db: Arc<SignatureDatabase>,
         heuristic_threshold: u8,
         heuristic_enabled: bool,
+        yara_enabled: bool,
     ) -> Self {
         Self {
             hash_matcher: HashMatcher::new(db),
             heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
             heuristic_threshold,
             heuristic_enabled,
-            yara_engine: crate::detection::yara::YaraEngine::with_default_rules().ok(),
+            yara_engine: if yara_enabled {
+                crate::detection::yara::YaraEngine::with_default_rules().ok()
+            } else {
+                None
+            },
         }
     }
 
