@@ -88,6 +88,24 @@ impl FileScanner {
         }
     }
 
+    /// Load custom YARA rules from a file into the detection engine.
+    ///
+    /// Must be called before scanning begins (before the Arc is cloned).
+    pub fn load_yara_rules(&mut self, path: &Path) -> Result<()> {
+        if let Some(ref mut engine_arc) = self.detection_engine {
+            let engine = Arc::get_mut(engine_arc).ok_or_else(|| {
+                Error::Custom("Cannot load YARA rules: engine already shared".to_string())
+            })?;
+            engine.yara_engine_mut().load_rules_file(path)?;
+            log::info!("Loaded custom YARA rules from: {}", path.display());
+            Ok(())
+        } else {
+            Err(Error::Custom(
+                "Cannot load YARA rules: no detection engine available".to_string(),
+            ))
+        }
+    }
+
     /// Get the progress tracker.
     pub fn progress(&self) -> &Arc<ProgressTracker> {
         &self.progress

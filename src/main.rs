@@ -112,12 +112,21 @@ async fn run_scan(
     path: Option<Vec<std::path::PathBuf>>,
     output: Option<std::path::PathBuf>,
     export_format: ExportFormat,
-    _no_action: bool,
-    _yara: Option<std::path::PathBuf>,
+    no_action: bool,
+    yara: Option<std::path::PathBuf>,
     format: OutputFormat,
     silent: bool,
 ) -> Result<()> {
-    let scanner = FileScanner::new(config);
+    let mut scanner = FileScanner::new(config);
+
+    // Load custom YARA rules if provided
+    if let Some(ref yara_path) = yara {
+        scanner.load_yara_rules(yara_path)?;
+    }
+
+    if no_action {
+        log::info!("No-action mode: auto-remediation suppressed");
+    }
 
     // Set up progress reporting for non-silent mode
     if !silent {

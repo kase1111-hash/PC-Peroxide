@@ -377,6 +377,15 @@ impl DetectionEngine {
     pub fn yara_engine(&self) -> Option<&crate::detection::yara::YaraEngine> {
         self.yara_engine.as_ref()
     }
+
+    /// Get a mutable reference to the YARA engine, initializing it if needed.
+    ///
+    /// If YARA was disabled but the caller needs to load custom rules,
+    /// this creates a new empty engine and returns a mutable reference.
+    pub fn yara_engine_mut(&mut self) -> &mut crate::detection::yara::YaraEngine {
+        self.yara_engine
+            .get_or_insert_with(crate::detection::yara::YaraEngine::new)
+    }
 }
 
 /// Detailed scan results from all detection engines.
