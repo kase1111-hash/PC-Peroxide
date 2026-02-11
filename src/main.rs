@@ -430,9 +430,43 @@ fn run_config(action: ConfigAction, config: &Config) -> Result<()> {
         }
         ConfigAction::Set { key, value } => {
             log::info!("Setting {} = {}", key, value);
-            // TODO: Implement config modification
-            println!("Config modification not yet implemented.");
-            println!("Edit the config file directly: {:?}", Config::default_config_path());
+
+            let config_path = Config::default_config_path();
+            let mut config = Config::load_or_default();
+
+            // Serialize to JSON, navigate dotted path, set value
+            let json_str = serde_json::to_string(&config)?;
+            let mut json: serde_json::Value = serde_json::from_str(&json_str)?;
+
+            let parts: Vec<&str> = key.split('.').collect();
+            let mut target = &mut json;
+            for part in &parts[..parts.len() - 1] {
+                target = target.get_mut(*part).ok_or_else(|| {
+                    pc_peroxide::core::error::Error::ConfigInvalid {
+                        field: key.clone(),
+                        message: format!("Unknown config section: {}", part),
+                    }
+                })?;
+            }
+            let field = parts.last().unwrap();
+
+            if target.get(*field).is_none() {
+                return Err(pc_peroxide::core::error::Error::ConfigInvalid {
+                    field: key.clone(),
+                    message: format!("Unknown config key: {}", field),
+                });
+            }
+
+            // Parse value as JSON literal, fall back to string
+            let parsed: serde_json::Value = serde_json::from_str(&value)
+                .unwrap_or(serde_json::Value::String(value.clone()));
+            target[*field] = parsed;
+
+            // Deserialize back, validate, and save
+            config = serde_json::from_value(json)?;
+            config.validate()?;
+            config.save(&config_path)?;
+            println!("Set {} = {}", key, value);
         }
         ConfigAction::Reset { yes: _ } => {
             log::info!("Resetting configuration to defaults...");
