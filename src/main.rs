@@ -5,6 +5,7 @@
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
+use pc_peroxide::detection::SignatureDatabase;
 use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
@@ -405,17 +406,19 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
 /// Update signatures.
 async fn run_update(force: bool, import: Option<std::path::PathBuf>) -> Result<()> {
     if let Some(path) = import {
-        log::info!("Importing signatures from: {:?}", path);
-        // TODO: Implement in Phase 2
-        println!("Import functionality not yet implemented.");
-    } else {
-        log::info!("Checking for signature updates...");
-        if force {
-            log::info!("Forcing update...");
-        }
-        // TODO: Implement in Phase 10
-        println!("Update functionality not yet implemented.");
+        log::info!("Importing signatures from: {}", path.display());
+        let db = SignatureDatabase::open_default()?;
+        let result = db.import_file(&path)?;
+        println!("{}", result);
+        return Ok(());
     }
+
+    log::info!("Checking for signature updates...");
+    if force {
+        log::info!("Forcing update...");
+    }
+    // TODO: Implement online update in a future phase
+    println!("Online update not yet implemented. Use --import <file> to import signatures from a file.");
     Ok(())
 }
 
@@ -427,9 +430,43 @@ fn run_config(action: ConfigAction, config: &Config) -> Result<()> {
         }
         ConfigAction::Set { key, value } => {
             log::info!("Setting {} = {}", key, value);
-            // TODO: Implement config modification
-            println!("Config modification not yet implemented.");
-            println!("Edit the config file directly: {:?}", Config::default_config_path());
+
+            let config_path = Config::default_config_path();
+            let mut config = Config::load_or_default();
+
+            // Serialize to JSON, navigate dotted path, set value
+            let json_str = serde_json::to_string(&config)?;
+            let mut json: serde_json::Value = serde_json::from_str(&json_str)?;
+
+            let parts: Vec<&str> = key.split('.').collect();
+            let mut target = &mut json;
+            for part in &parts[..parts.len() - 1] {
+                target = target.get_mut(*part).ok_or_else(|| {
+                    pc_peroxide::core::error::Error::ConfigInvalid {
+                        field: key.clone(),
+                        message: format!("Unknown config section: {}", part),
+                    }
+                })?;
+            }
+            let field = parts.last().unwrap();
+
+            if target.get(*field).is_none() {
+                return Err(pc_peroxide::core::error::Error::ConfigInvalid {
+                    field: key.clone(),
+                    message: format!("Unknown config key: {}", field),
+                });
+            }
+
+            // Parse value as JSON literal, fall back to string
+            let parsed: serde_json::Value = serde_json::from_str(&value)
+                .unwrap_or(serde_json::Value::String(value.clone()));
+            target[*field] = parsed;
+
+            // Deserialize back, validate, and save
+            config = serde_json::from_value(json)?;
+            config.validate()?;
+            config.save(&config_path)?;
+            println!("Set {} = {}", key, value);
         }
         ConfigAction::Reset { yes: _ } => {
             log::info!("Resetting configuration to defaults...");

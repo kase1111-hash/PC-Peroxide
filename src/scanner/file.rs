@@ -56,6 +56,9 @@ impl FileScanner {
         // Try to open the signature database
         let detection_engine = match SignatureDatabase::open_default() {
             Ok(db) => {
+                // Auto-import bundled signatures if database is empty
+                Self::auto_import_signatures(&db);
+
                 log::debug!("Signature database loaded");
                 Some(Arc::new(DetectionEngine::with_settings(
                     Arc::new(db),
@@ -104,6 +107,48 @@ impl FileScanner {
                 "Cannot load YARA rules: no detection engine available".to_string(),
             ))
         }
+    }
+
+    /// Auto-import bundled signatures if the database is empty.
+    ///
+    /// Looks for `data/signatures.json` next to the executable, then
+    /// in the current working directory.
+    fn auto_import_signatures(db: &SignatureDatabase) {
+        let info = match db.info() {
+            Ok(info) => info,
+            Err(_) => return,
+        };
+        if info.signature_count > 0 {
+            return;
+        }
+
+        // Search for bundled signature file
+        let candidates = [
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("data/signatures.json"))),
+            Some(PathBuf::from("data/signatures.json")),
+        ];
+
+        for candidate in candidates.iter().flatten() {
+            if candidate.is_file() {
+                match db.import_file(candidate) {
+                    Ok(result) => {
+                        log::info!(
+                            "Auto-imported bundled signatures: {} imported, {} skipped",
+                            result.imported,
+                            result.skipped
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to auto-import signatures from {}: {}", candidate.display(), e);
+                    }
+                }
+            }
+        }
+
+        log::debug!("No bundled signature file found for auto-import");
     }
 
     /// Get the progress tracker.
