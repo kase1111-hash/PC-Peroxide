@@ -169,6 +169,51 @@ impl MatchResult {
     }
 }
 
+/// Convert a YARA RuleMatch to a Detection.
+fn yara_match_to_detection(path: &Path, rule_match: &crate::detection::yara::RuleMatch) -> Detection {
+    let severity = rule_match
+        .meta
+        .severity
+        .as_deref()
+        .and_then(Severity::parse)
+        .unwrap_or(Severity::High);
+
+    let category = rule_match
+        .meta
+        .category
+        .as_deref()
+        .and_then(ThreatCategory::parse)
+        .unwrap_or(ThreatCategory::Generic);
+
+    let description = rule_match
+        .meta
+        .description
+        .clone()
+        .unwrap_or_default();
+
+    Detection {
+        path: path.to_path_buf(),
+        threat_name: rule_match.rule_name.clone(),
+        severity,
+        category,
+        method: DetectionMethod::Yara,
+        description,
+        sha256: None,
+        score: severity.score(),
+    }
+}
+
+/// Pick the highest-severity YARA match from a list.
+fn pick_best_yara_match(matches: &[crate::detection::yara::RuleMatch]) -> Option<&crate::detection::yara::RuleMatch> {
+    matches.iter().max_by_key(|m| {
+        m.meta
+            .severity
+            .as_deref()
+            .and_then(Severity::parse)
+            .unwrap_or(Severity::High)
+    })
+}
+
 /// Convert severity to a heuristic-style score.
 fn severity_to_score(severity: Severity) -> u8 {
     match severity {
@@ -206,6 +251,8 @@ pub struct DetectionEngine {
     heuristic_threshold: u8,
     /// Whether heuristic analysis is enabled
     heuristic_enabled: bool,
+    /// YARA rule engine (None if disabled or failed to load)
+    yara_engine: Option<crate::detection::yara::YaraEngine>,
 }
 
 impl DetectionEngine {
@@ -216,6 +263,7 @@ impl DetectionEngine {
             heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
             heuristic_threshold: 70,
             heuristic_enabled: true,
+            yara_engine: crate::detection::yara::YaraEngine::with_default_rules().ok(),
         }
     }
 
@@ -224,12 +272,18 @@ impl DetectionEngine {
         db: Arc<SignatureDatabase>,
         heuristic_threshold: u8,
         heuristic_enabled: bool,
+        yara_enabled: bool,
     ) -> Self {
         Self {
             hash_matcher: HashMatcher::new(db),
             heuristic_engine: crate::detection::heuristic::HeuristicEngine::new(),
             heuristic_threshold,
             heuristic_enabled,
+            yara_engine: if yara_enabled {
+                crate::detection::yara::YaraEngine::with_default_rules().ok()
+            } else {
+                None
+            },
         }
     }
 
@@ -265,7 +319,14 @@ impl DetectionEngine {
             }
         }
 
-        // 3. Future: YARA rules, behavioral analysis
+        // 3. YARA rules
+        if let Some(ref yara) = self.yara_engine {
+            if let Ok(matches) = yara.scan_file(path) {
+                if let Some(best) = pick_best_yara_match(&matches) {
+                    return Ok(Some(yara_match_to_detection(path, best)));
+                }
+            }
+        }
 
         Ok(None)
     }
@@ -283,6 +344,13 @@ impl DetectionEngine {
         if self.heuristic_enabled {
             if let Ok(heuristic_result) = self.heuristic_engine.analyze_file(path) {
                 details.heuristic_result = Some(heuristic_result);
+            }
+        }
+
+        // YARA rules
+        if let Some(ref yara) = self.yara_engine {
+            if let Ok(matches) = yara.scan_file(path) {
+                details.yara_matches = matches;
             }
         }
 
@@ -304,6 +372,20 @@ impl DetectionEngine {
     pub fn heuristic_engine(&self) -> &crate::detection::heuristic::HeuristicEngine {
         &self.heuristic_engine
     }
+
+    /// Get the YARA engine (if available).
+    pub fn yara_engine(&self) -> Option<&crate::detection::yara::YaraEngine> {
+        self.yara_engine.as_ref()
+    }
+
+    /// Get a mutable reference to the YARA engine, initializing it if needed.
+    ///
+    /// If YARA was disabled but the caller needs to load custom rules,
+    /// this creates a new empty engine and returns a mutable reference.
+    pub fn yara_engine_mut(&mut self) -> &mut crate::detection::yara::YaraEngine {
+        self.yara_engine
+            .get_or_insert_with(crate::detection::yara::YaraEngine::new)
+    }
 }
 
 /// Detailed scan results from all detection engines.
@@ -315,6 +397,8 @@ pub struct ScanDetails {
     pub signature_match: Option<MatchResult>,
     /// Heuristic analysis result
     pub heuristic_result: Option<crate::detection::heuristic::HeuristicResult>,
+    /// YARA rule matches
+    pub yara_matches: Vec<crate::detection::yara::RuleMatch>,
 }
 
 impl ScanDetails {
@@ -324,6 +408,7 @@ impl ScanDetails {
             path,
             signature_match: None,
             heuristic_result: None,
+            yara_matches: Vec::new(),
         }
     }
 
@@ -333,16 +418,26 @@ impl ScanDetails {
             return true;
         }
         if let Some(ref heuristic) = self.heuristic_result {
-            return heuristic.score >= heuristic_threshold;
+            if heuristic.score >= heuristic_threshold {
+                return true;
+            }
+        }
+        if !self.yara_matches.is_empty() {
+            return true;
         }
         false
     }
 
-    /// Get the primary detection (signature takes priority).
+    /// Get the primary detection (signature takes priority, then YARA, then heuristic).
     pub fn primary_detection(&self, heuristic_threshold: u8) -> Option<Detection> {
         // Signature matches take priority
         if let Some(ref match_result) = self.signature_match {
             return Some(match_result.to_detection(&self.path));
+        }
+
+        // Then YARA rules
+        if let Some(best) = pick_best_yara_match(&self.yara_matches) {
+            return Some(yara_match_to_detection(&self.path, best));
         }
 
         // Then heuristic
@@ -477,5 +572,85 @@ mod tests {
 
         let detection = engine.scan_file(file.path()).unwrap();
         assert!(detection.is_none());
+    }
+
+    #[test]
+    fn test_yara_ransomware_detection() {
+        let test_db = TestDb::new();
+        let engine = DetectionEngine::new(test_db.db());
+
+        // Create a file with PE header + ransomware strings (not in hash DB)
+        let mut file = NamedTempFile::new().unwrap();
+        let mut data = vec![0x4D, 0x5A]; // MZ header
+        data.extend(vec![0u8; 100]);
+        data.extend(b"Your files have been encrypted. Pay bitcoin to restore your files.");
+        file.write_all(&data).unwrap();
+
+        let detection = engine.scan_file(file.path()).unwrap();
+        assert!(detection.is_some(), "YARA should detect ransomware strings in PE");
+
+        let det = detection.unwrap();
+        assert_eq!(det.method, DetectionMethod::Yara);
+        assert_eq!(det.threat_name, "Ransomware_Generic");
+    }
+
+    #[test]
+    fn test_yara_crypto_miner_detection() {
+        let test_db = TestDb::new();
+        let engine = DetectionEngine::new(test_db.db());
+
+        // Create a file with mining pool strings (no PE header needed for this rule)
+        let mut file = NamedTempFile::new().unwrap();
+        let data = b"connecting to stratum+tcp://pool.example.com xmrig --threads=4";
+        file.write_all(data).unwrap();
+
+        let detection = engine.scan_file(file.path()).unwrap();
+        assert!(detection.is_some(), "YARA should detect crypto miner strings");
+
+        let det = detection.unwrap();
+        assert_eq!(det.method, DetectionMethod::Yara);
+        assert_eq!(det.threat_name, "CryptoMiner_Generic");
+    }
+
+    #[test]
+    fn test_yara_in_detailed_scan() {
+        let test_db = TestDb::new();
+        let engine = DetectionEngine::new(test_db.db());
+
+        // File with ransomware strings + MZ header
+        let mut file = NamedTempFile::new().unwrap();
+        let mut data = vec![0x4D, 0x5A];
+        data.extend(vec![0u8; 100]);
+        data.extend(b"Your files have been encrypted. Pay bitcoin now.");
+        file.write_all(&data).unwrap();
+
+        let details = engine.scan_file_detailed(file.path()).unwrap();
+        assert!(!details.yara_matches.is_empty(), "Detailed scan should include YARA matches");
+        assert!(details.yara_matches.iter().any(|m| m.rule_name == "Ransomware_Generic"));
+    }
+
+    #[test]
+    fn test_yara_helper_conversion() {
+        use crate::detection::yara::rules::{RuleMatch, RuleMeta};
+        use std::collections::HashMap;
+
+        let rule_match = RuleMatch {
+            rule_name: "TestRule".to_string(),
+            meta: RuleMeta {
+                description: Some("Test description".to_string()),
+                severity: Some("critical".to_string()),
+                category: Some("ransomware".to_string()),
+                ..Default::default()
+            },
+            matches: HashMap::new(),
+        };
+
+        let det = yara_match_to_detection(Path::new("/test/file.exe"), &rule_match);
+        assert_eq!(det.threat_name, "TestRule");
+        assert_eq!(det.severity, Severity::Critical);
+        assert_eq!(det.category, ThreatCategory::Ransomware);
+        assert_eq!(det.method, DetectionMethod::Yara);
+        assert_eq!(det.description, "Test description");
+        assert_eq!(det.score, 100); // Critical score
     }
 }

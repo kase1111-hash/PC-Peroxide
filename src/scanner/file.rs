@@ -57,7 +57,12 @@ impl FileScanner {
         let detection_engine = match SignatureDatabase::open_default() {
             Ok(db) => {
                 log::debug!("Signature database loaded");
-                Some(Arc::new(DetectionEngine::new(Arc::new(db))))
+                Some(Arc::new(DetectionEngine::with_settings(
+                    Arc::new(db),
+                    config.detection.heuristic_threshold,
+                    true, // heuristic always enabled
+                    config.detection.enable_yara,
+                )))
             }
             Err(e) => {
                 log::warn!("Failed to load signature database: {}", e);
@@ -80,6 +85,24 @@ impl FileScanner {
             detection_engine: Some(Arc::new(engine)),
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(ProgressTracker::new()),
+        }
+    }
+
+    /// Load custom YARA rules from a file into the detection engine.
+    ///
+    /// Must be called before scanning begins (before the Arc is cloned).
+    pub fn load_yara_rules(&mut self, path: &Path) -> Result<()> {
+        if let Some(ref mut engine_arc) = self.detection_engine {
+            let engine = Arc::get_mut(engine_arc).ok_or_else(|| {
+                Error::Custom("Cannot load YARA rules: engine already shared".to_string())
+            })?;
+            engine.yara_engine_mut().load_rules_file(path)?;
+            log::info!("Loaded custom YARA rules from: {}", path.display());
+            Ok(())
+        } else {
+            Err(Error::Custom(
+                "Cannot load YARA rules: no detection engine available".to_string(),
+            ))
         }
     }
 
