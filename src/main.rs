@@ -5,6 +5,7 @@
 use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
+use pc_peroxide::detection::SignatureDatabase;
 use pc_peroxide::quarantine::{get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
@@ -405,17 +406,19 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
 /// Update signatures.
 async fn run_update(force: bool, import: Option<std::path::PathBuf>) -> Result<()> {
     if let Some(path) = import {
-        log::info!("Importing signatures from: {:?}", path);
-        // TODO: Implement in Phase 2
-        println!("Import functionality not yet implemented.");
-    } else {
-        log::info!("Checking for signature updates...");
-        if force {
-            log::info!("Forcing update...");
-        }
-        // TODO: Implement in Phase 10
-        println!("Update functionality not yet implemented.");
+        log::info!("Importing signatures from: {}", path.display());
+        let db = SignatureDatabase::open_default()?;
+        let result = db.import_file(&path)?;
+        println!("{}", result);
+        return Ok(());
     }
+
+    log::info!("Checking for signature updates...");
+    if force {
+        log::info!("Forcing update...");
+    }
+    // TODO: Implement online update in a future phase
+    println!("Online update not yet implemented. Use --import <file> to import signatures from a file.");
     Ok(())
 }
 
