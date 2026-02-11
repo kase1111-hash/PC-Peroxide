@@ -175,25 +175,26 @@ impl ProcessEnumerator {
     /// Enumerate processes on Windows.
     #[cfg(target_os = "windows")]
     fn enumerate_windows(&self) -> Result<Vec<ProcessInfo>> {
-        use std::mem;
         use std::ffi::OsString;
+        use std::mem;
         use std::os::windows::ffi::OsStringExt;
-        use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
         use windows::core::PWSTR;
+        use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
         use windows::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW,
-            PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
         };
         use windows::Win32::System::Threading::{
-            OpenProcess, QueryFullProcessImageNameW,
-            PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
         };
 
         let mut processes = Vec::new();
 
         unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-                .map_err(|e| crate::core::error::Error::Internal(format!("Failed to create snapshot: {}", e)))?;
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).map_err(|e| {
+                crate::core::error::Error::Internal(format!("Failed to create snapshot: {}", e))
+            })?;
 
             let mut entry: PROCESSENTRY32W = mem::zeroed();
             entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
@@ -203,7 +204,11 @@ impl ProcessEnumerator {
                     let pid = entry.th32ProcessID;
 
                     // Get process name from entry
-                    let name_len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                    let name_len = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(entry.szExeFile.len());
                     let name = OsString::from_wide(&entry.szExeFile[..name_len])
                         .to_string_lossy()
                         .to_string();
@@ -216,15 +221,22 @@ impl ProcessEnumerator {
                         continue;
                     }
 
-                    let mut info = ProcessInfo::new(pid, &name)
-                        .with_parent_pid(entry.th32ParentProcessID);
+                    let mut info =
+                        ProcessInfo::new(pid, &name).with_parent_pid(entry.th32ParentProcessID);
 
                     // Try to get full path
                     if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
                         let mut buffer = [0u16; MAX_PATH as usize];
                         let mut size = buffer.len() as u32;
 
-                        if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR::from_raw(buffer.as_mut_ptr()), &mut size).is_ok() {
+                        if QueryFullProcessImageNameW(
+                            handle,
+                            PROCESS_NAME_WIN32,
+                            PWSTR::from_raw(buffer.as_mut_ptr()),
+                            &mut size,
+                        )
+                        .is_ok()
+                        {
                             let path = OsString::from_wide(&buffer[..size as usize])
                                 .to_string_lossy()
                                 .to_string();
@@ -261,11 +273,11 @@ impl ProcessEnumerator {
     fn get_process_windows(&self, pid: u32) -> Result<Option<ProcessInfo>> {
         use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
-        use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
         use windows::core::PWSTR;
+        use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
         use windows::Win32::System::Threading::{
-            OpenProcess, QueryFullProcessImageNameW,
-            PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
         };
 
         unsafe {
@@ -273,7 +285,14 @@ impl ProcessEnumerator {
                 let mut buffer = [0u16; MAX_PATH as usize];
                 let mut size = buffer.len() as u32;
 
-                let path = if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR::from_raw(buffer.as_mut_ptr()), &mut size).is_ok() {
+                let path = if QueryFullProcessImageNameW(
+                    handle,
+                    PROCESS_NAME_WIN32,
+                    PWSTR::from_raw(buffer.as_mut_ptr()),
+                    &mut size,
+                )
+                .is_ok()
+                {
                     let path_str = OsString::from_wide(&buffer[..size as usize])
                         .to_string_lossy()
                         .to_string();
@@ -285,7 +304,8 @@ impl ProcessEnumerator {
                 let _ = CloseHandle(handle);
 
                 // Get process name from path or use PID
-                let name = path.as_ref()
+                let name = path
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| format!("pid_{}", pid));
@@ -363,7 +383,11 @@ impl ProcessEnumerator {
         // Read stat for parent PID
         if let Ok(stat) = fs::read_to_string(format!("{}/stat", proc_dir)) {
             // Format: pid (comm) state ppid ...
-            if let Some(ppid_str) = stat.split(')').nth(1).and_then(|s| s.split_whitespace().nth(1)) {
+            if let Some(ppid_str) = stat
+                .split(')')
+                .nth(1)
+                .and_then(|s| s.split_whitespace().nth(1))
+            {
                 if let Ok(ppid) = ppid_str.parse::<u32>() {
                     info.parent_pid = Some(ppid);
                 }
@@ -388,10 +412,7 @@ impl ProcessEnumerator {
 
         let mut processes = Vec::new();
 
-        if let Ok(output) = Command::new("ps")
-            .args(["-axo", "pid,ppid,comm"])
-            .output()
-        {
+        if let Ok(output) = Command::new("ps").args(["-axo", "pid,ppid,comm"]).output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines().skip(1) {
                 // Skip header
@@ -468,16 +489,14 @@ mod tests {
 
     #[test]
     fn test_process_info_with_path() {
-        let info = ProcessInfo::new(1234, "test.exe")
-            .with_path("/usr/bin/test");
+        let info = ProcessInfo::new(1234, "test.exe").with_path("/usr/bin/test");
         assert!(info.path.is_some());
         assert_eq!(info.path.unwrap().to_str().unwrap(), "/usr/bin/test");
     }
 
     #[test]
     fn test_process_info_with_parent() {
-        let info = ProcessInfo::new(1234, "test.exe")
-            .with_parent_pid(1);
+        let info = ProcessInfo::new(1234, "test.exe").with_parent_pid(1);
         assert_eq!(info.parent_pid, Some(1));
     }
 
@@ -534,8 +553,7 @@ mod tests {
 
     #[test]
     fn test_process_entry_from_info() {
-        let info = ProcessInfo::new(1234, "test.exe")
-            .with_path("/usr/bin/test");
+        let info = ProcessInfo::new(1234, "test.exe").with_path("/usr/bin/test");
 
         let entry: ProcessEntry = info.into();
         assert_eq!(entry.pid, 1234);

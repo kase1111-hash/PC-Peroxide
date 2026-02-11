@@ -127,10 +127,8 @@ pub struct HijackScanner {
 impl HijackScanner {
     /// Create a new hijack scanner.
     pub fn new() -> Self {
-        let hijacker_domains: HashSet<String> = HIJACKER_DOMAINS
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
+        let hijacker_domains: HashSet<String> =
+            HIJACKER_DOMAINS.iter().map(|s| s.to_lowercase()).collect();
 
         let legitimate_search: HashSet<String> = LEGITIMATE_SEARCH_ENGINES
             .iter()
@@ -190,16 +188,25 @@ impl HijackScanner {
             if let Some(local_app_data) = dirs::data_local_dir() {
                 match browser {
                     BrowserType::Chrome => {
-                        paths.push(local_app_data.join("Google/Chrome/User Data/Default/Preferences"));
-                        paths.push(local_app_data.join("Google/Chrome/User Data/Default/Secure Preferences"));
+                        paths.push(
+                            local_app_data.join("Google/Chrome/User Data/Default/Preferences"),
+                        );
+                        paths.push(
+                            local_app_data
+                                .join("Google/Chrome/User Data/Default/Secure Preferences"),
+                        );
                     }
                     BrowserType::Edge => {
-                        paths.push(local_app_data.join("Microsoft/Edge/User Data/Default/Preferences"));
+                        paths.push(
+                            local_app_data.join("Microsoft/Edge/User Data/Default/Preferences"),
+                        );
                     }
                     BrowserType::Firefox => {
                         if let Some(roaming) = dirs::data_dir() {
                             // Firefox uses prefs.js in profile directory
-                            if let Ok(entries) = fs::read_dir(roaming.join("Mozilla/Firefox/Profiles")) {
+                            if let Ok(entries) =
+                                fs::read_dir(roaming.join("Mozilla/Firefox/Profiles"))
+                            {
                                 for entry in entries.filter_map(|e| e.ok()) {
                                     let prefs = entry.path().join("prefs.js");
                                     if prefs.exists() {
@@ -210,7 +217,10 @@ impl HijackScanner {
                         }
                     }
                     BrowserType::Brave => {
-                        paths.push(local_app_data.join("BraveSoftware/Brave-Browser/User Data/Default/Preferences"));
+                        paths.push(
+                            local_app_data
+                                .join("BraveSoftware/Brave-Browser/User Data/Default/Preferences"),
+                        );
                     }
                     BrowserType::Opera => {
                         paths.push(local_app_data.join("Opera Software/Opera Stable/Preferences"));
@@ -241,7 +251,9 @@ impl HijackScanner {
                         }
                     }
                     BrowserType::Brave => {
-                        paths.push(home.join(".config/BraveSoftware/Brave-Browser/Default/Preferences"));
+                        paths.push(
+                            home.join(".config/BraveSoftware/Brave-Browser/Default/Preferences"),
+                        );
                     }
                     BrowserType::Opera => {
                         paths.push(home.join(".config/opera/Preferences"));
@@ -255,13 +267,21 @@ impl HijackScanner {
             if let Some(home) = dirs::home_dir() {
                 match browser {
                     BrowserType::Chrome => {
-                        paths.push(home.join("Library/Application Support/Google/Chrome/Default/Preferences"));
+                        paths.push(
+                            home.join(
+                                "Library/Application Support/Google/Chrome/Default/Preferences",
+                            ),
+                        );
                     }
                     BrowserType::Edge => {
-                        paths.push(home.join("Library/Application Support/Microsoft Edge/Default/Preferences"));
+                        paths.push(home.join(
+                            "Library/Application Support/Microsoft Edge/Default/Preferences",
+                        ));
                     }
                     BrowserType::Firefox => {
-                        if let Ok(entries) = fs::read_dir(home.join("Library/Application Support/Firefox/Profiles")) {
+                        if let Ok(entries) =
+                            fs::read_dir(home.join("Library/Application Support/Firefox/Profiles"))
+                        {
                             for entry in entries.filter_map(|e| e.ok()) {
                                 let prefs = entry.path().join("prefs.js");
                                 if prefs.exists() {
@@ -274,7 +294,9 @@ impl HijackScanner {
                         paths.push(home.join("Library/Application Support/BraveSoftware/Brave-Browser/Default/Preferences"));
                     }
                     BrowserType::Opera => {
-                        paths.push(home.join("Library/Application Support/com.operasoftware.Opera/Preferences"));
+                        paths.push(home.join(
+                            "Library/Application Support/com.operasoftware.Opera/Preferences",
+                        ));
                     }
                 }
             }
@@ -297,10 +319,7 @@ impl HijackScanner {
         };
 
         // Check homepage
-        if let Some(homepage) = prefs
-            .get("homepage")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(homepage) = prefs.get("homepage").and_then(|v| v.as_str()) {
             if let Some(hijack) = self.check_url_hijack(homepage, HijackType::Homepage, browser) {
                 hijacks.push(hijack);
             }
@@ -542,10 +561,7 @@ mod tests {
             scanner.extract_domain("https://www.google.com/search"),
             "google.com"
         );
-        assert_eq!(
-            scanner.extract_domain("http://example.com"),
-            "example.com"
-        );
+        assert_eq!(scanner.extract_domain("http://example.com"), "example.com");
         assert_eq!(
             scanner.extract_domain("delta-homes.com/page"),
             "delta-homes.com"
@@ -604,7 +620,8 @@ mod tests {
     fn test_parse_firefox_pref() {
         let scanner = HijackScanner::new();
 
-        let result = scanner.parse_firefox_pref(r#"user_pref("browser.startup.homepage", "https://google.com");"#);
+        let result = scanner
+            .parse_firefox_pref(r#"user_pref("browser.startup.homepage", "https://google.com");"#);
         assert!(result.is_some());
 
         let (key, value) = result.unwrap();

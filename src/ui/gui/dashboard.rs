@@ -108,10 +108,13 @@ impl DashboardView {
                     // Status indicator
                     ui.horizontal(|ui| {
                         let indicator_size = 16.0;
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::splat(indicator_size), egui::Sense::hover());
-                        ui.painter()
-                            .circle_filled(rect.center(), indicator_size / 2.0, status_color);
+                        let (rect, _) = ui
+                            .allocate_exact_size(Vec2::splat(indicator_size), egui::Sense::hover());
+                        ui.painter().circle_filled(
+                            rect.center(),
+                            indicator_size / 2.0,
+                            status_color,
+                        );
 
                         ui.add_space(8.0);
                         ui.label(
@@ -171,7 +174,11 @@ impl DashboardView {
     }
 
     /// Render last scan card.
-    fn render_last_scan_card(&self, ui: &mut Ui, scan_state: &ScanState) -> Option<DashboardAction> {
+    fn render_last_scan_card(
+        &self,
+        ui: &mut Ui,
+        scan_state: &ScanState,
+    ) -> Option<DashboardAction> {
         let mut action = None;
 
         egui::Frame::none()
@@ -230,14 +237,11 @@ impl DashboardView {
         let is_scanning = scan_state.is_scanning;
 
         // Quick Scan button
-        let quick_btn = egui::Button::new(
-            RichText::new("Quick Scan")
-                .size(16.0)
-                .color(Color32::WHITE),
-        )
-        .fill(self.theme.primary)
-        .min_size(Vec2::new(150.0, 50.0))
-        .rounding(Rounding::same(6.0));
+        let quick_btn =
+            egui::Button::new(RichText::new("Quick Scan").size(16.0).color(Color32::WHITE))
+                .fill(self.theme.primary)
+                .min_size(Vec2::new(150.0, 50.0))
+                .rounding(Rounding::same(6.0));
 
         ui.add_enabled_ui(!is_scanning, |ui| {
             if ui

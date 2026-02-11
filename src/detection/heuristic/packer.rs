@@ -90,7 +90,10 @@ impl PackerDetector {
                         bytes: &[
                             Some(0x60), // PUSHAD
                             Some(0xBE),
-                            None, None, None, None,
+                            None,
+                            None,
+                            None,
+                            None,
                             Some(0x8D),
                             Some(0xBE),
                         ],
@@ -99,7 +102,9 @@ impl PackerDetector {
                     },
                     PackerPattern {
                         bytes: &[
-                            Some(0x55), Some(0x50), Some(0x58), // "UPX"
+                            Some(0x55),
+                            Some(0x50),
+                            Some(0x58), // "UPX"
                             Some(0x21),
                         ],
                         location: PatternLocation::Anywhere,
@@ -107,29 +112,28 @@ impl PackerDetector {
                     },
                 ],
                 section_names: &["UPX0", "UPX1", "UPX2", ".UPX"],
-                suspicion_score: 5,  // Reduced from 15: UPX is a legitimate packer
+                suspicion_score: 5, // Reduced from 15: UPX is a legitimate packer
                 malware_associated: false,
             },
-
             // ASPack
             PackerSignature {
                 name: "ASPack",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0x60), // PUSHAD
-                            Some(0xE8),
-                            Some(0x03), Some(0x00), Some(0x00), Some(0x00),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "ASPack entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[
+                        Some(0x60), // PUSHAD
+                        Some(0xE8),
+                        Some(0x03),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                    ],
+                    location: PatternLocation::EntryPoint,
+                    description: "ASPack entry signature",
+                }],
                 section_names: &[".aspack", ".adata", ".ASPack"],
                 suspicion_score: 25,
                 malware_associated: true,
             },
-
             // Themida / WinLicense
             PackerSignature {
                 name: "Themida",
@@ -138,7 +142,6 @@ impl PackerDetector {
                 suspicion_score: 40,
                 malware_associated: true,
             },
-
             // VMProtect
             PackerSignature {
                 name: "VMProtect",
@@ -147,87 +150,73 @@ impl PackerDetector {
                 suspicion_score: 40,
                 malware_associated: true,
             },
-
             // PECompact
             PackerSignature {
                 name: "PECompact",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0xB8),
-                            None, None, None, None,
-                            Some(0x50),
-                            Some(0x64),
-                            Some(0xFF),
-                            Some(0x35),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "PECompact entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[
+                        Some(0xB8),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(0x50),
+                        Some(0x64),
+                        Some(0xFF),
+                        Some(0x35),
+                    ],
+                    location: PatternLocation::EntryPoint,
+                    description: "PECompact entry signature",
+                }],
                 section_names: &["PEC2", "pec1", "pec2", "PEC2MO"],
                 suspicion_score: 25,
                 malware_associated: true,
             },
-
             // FSG
             PackerSignature {
                 name: "FSG",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0x87), Some(0x25),
-                            None, None, None, None,
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "FSG entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[Some(0x87), Some(0x25), None, None, None, None],
+                    location: PatternLocation::EntryPoint,
+                    description: "FSG entry signature",
+                }],
                 section_names: &[],
                 suspicion_score: 30,
                 malware_associated: true,
             },
-
             // MPRESS
             PackerSignature {
                 name: "MPRESS",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0x60),
-                            Some(0xE8),
-                            Some(0x00), Some(0x00), Some(0x00), Some(0x00),
-                            Some(0x58),
-                            Some(0x05),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "MPRESS entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[
+                        Some(0x60),
+                        Some(0xE8),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x58),
+                        Some(0x05),
+                    ],
+                    location: PatternLocation::EntryPoint,
+                    description: "MPRESS entry signature",
+                }],
                 section_names: &[".MPRESS1", ".MPRESS2", "MPRESS1", "MPRESS2"],
                 suspicion_score: 25,
                 malware_associated: true,
             },
-
             // Obsidium
             PackerSignature {
                 name: "Obsidium",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0xEB), Some(0x02),
-                            None, None,
-                            Some(0xE8),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "Obsidium entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[Some(0xEB), Some(0x02), None, None, Some(0xE8)],
+                    location: PatternLocation::EntryPoint,
+                    description: "Obsidium entry signature",
+                }],
                 section_names: &[".obsidium"],
                 suspicion_score: 35,
                 malware_associated: true,
             },
-
             // Enigma Protector
             PackerSignature {
                 name: "Enigma Protector",
@@ -236,48 +225,47 @@ impl PackerDetector {
                 suspicion_score: 35,
                 malware_associated: true,
             },
-
             // Armadillo
             PackerSignature {
                 name: "Armadillo",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0x60),
-                            Some(0xE8),
-                            Some(0x00), Some(0x00), Some(0x00), Some(0x00),
-                            Some(0x5D),
-                            Some(0x50),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "Armadillo entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[
+                        Some(0x60),
+                        Some(0xE8),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x5D),
+                        Some(0x50),
+                    ],
+                    location: PatternLocation::EntryPoint,
+                    description: "Armadillo entry signature",
+                }],
                 section_names: &[".arma", ".text1", ".text2", ".text3"],
                 suspicion_score: 35,
                 malware_associated: true,
             },
-
             // NsPack
             PackerSignature {
                 name: "NsPack",
-                patterns: &[
-                    PackerPattern {
-                        bytes: &[
-                            Some(0x9C),
-                            Some(0x60),
-                            Some(0xE8),
-                            Some(0x00), Some(0x00), Some(0x00), Some(0x00),
-                        ],
-                        location: PatternLocation::EntryPoint,
-                        description: "NsPack entry signature",
-                    },
-                ],
+                patterns: &[PackerPattern {
+                    bytes: &[
+                        Some(0x9C),
+                        Some(0x60),
+                        Some(0xE8),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                        Some(0x00),
+                    ],
+                    location: PatternLocation::EntryPoint,
+                    description: "NsPack entry signature",
+                }],
                 section_names: &["nsp0", "nsp1", "nsp2", ".nsp"],
                 suspicion_score: 30,
                 malware_associated: true,
             },
-
             // ConfuserEx (for .NET, but shows in section names)
             PackerSignature {
                 name: "ConfuserEx",
@@ -357,12 +345,7 @@ impl PackerDetector {
     }
 
     /// Match pattern at entry point.
-    fn match_at_entry_point(
-        &self,
-        data: &[u8],
-        pe_info: &PeInfo,
-        pattern: &[Option<u8>],
-    ) -> bool {
+    fn match_at_entry_point(&self, data: &[u8], pe_info: &PeInfo, pattern: &[Option<u8>]) -> bool {
         // Find file offset of entry point
         let entry_rva = pe_info.entry_point;
 
@@ -435,7 +418,13 @@ impl PackerDetector {
             .imports
             .iter()
             .map(|i| i.dll.to_lowercase())
-            .map(|s| if s.contains("kernel32") { "kernel32" } else { "other" })
+            .map(|s| {
+                if s.contains("kernel32") {
+                    "kernel32"
+                } else {
+                    "other"
+                }
+            })
             .collect();
         if dlls.len() == 1 && dlls.contains("kernel32") {
             indicators.push("Only kernel32 imports");
@@ -443,12 +432,14 @@ impl PackerDetector {
         }
 
         // LoadLibrary + GetProcAddress only (dynamic resolution)
-        let has_loadlib = pe_info.imports.iter().any(|i| {
-            i.function.to_lowercase().contains("loadlibrary")
-        });
-        let has_getproc = pe_info.imports.iter().any(|i| {
-            i.function.to_lowercase().contains("getprocaddress")
-        });
+        let has_loadlib = pe_info
+            .imports
+            .iter()
+            .any(|i| i.function.to_lowercase().contains("loadlibrary"));
+        let has_getproc = pe_info
+            .imports
+            .iter()
+            .any(|i| i.function.to_lowercase().contains("getprocaddress"));
         if has_loadlib && has_getproc && pe_info.imports.len() < 10 {
             indicators.push("Dynamic import resolution pattern");
             score += 15;
@@ -458,9 +449,7 @@ impl PackerDetector {
         let mut entry_section_name = String::new();
         for section in &pe_info.sections {
             let section_end = section.virtual_address + section.virtual_size;
-            if pe_info.entry_point >= section.virtual_address
-                && pe_info.entry_point < section_end
-            {
+            if pe_info.entry_point >= section.virtual_address && pe_info.entry_point < section_end {
                 entry_section_name = section.name.clone();
                 break;
             }
@@ -512,9 +501,7 @@ impl PackerDetector {
         ];
 
         let lower = name.to_lowercase();
-        known_malware_packers
-            .iter()
-            .any(|p| lower.contains(p))
+        known_malware_packers.iter().any(|p| lower.contains(p))
     }
 
     /// Check if a packer is considered legitimate.

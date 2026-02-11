@@ -217,10 +217,14 @@ impl ExtensionScanner {
             if let Some(local_app_data) = dirs::data_local_dir() {
                 match browser {
                     BrowserType::Chrome => {
-                        paths.push(local_app_data.join("Google/Chrome/User Data/Default/Extensions"));
+                        paths.push(
+                            local_app_data.join("Google/Chrome/User Data/Default/Extensions"),
+                        );
                     }
                     BrowserType::Edge => {
-                        paths.push(local_app_data.join("Microsoft/Edge/User Data/Default/Extensions"));
+                        paths.push(
+                            local_app_data.join("Microsoft/Edge/User Data/Default/Extensions"),
+                        );
                     }
                     BrowserType::Firefox => {
                         if let Some(roaming) = dirs::data_dir() {
@@ -228,7 +232,10 @@ impl ExtensionScanner {
                         }
                     }
                     BrowserType::Brave => {
-                        paths.push(local_app_data.join("BraveSoftware/Brave-Browser/User Data/Default/Extensions"));
+                        paths.push(
+                            local_app_data
+                                .join("BraveSoftware/Brave-Browser/User Data/Default/Extensions"),
+                        );
                     }
                     BrowserType::Opera => {
                         paths.push(local_app_data.join("Opera Software/Opera Stable/Extensions"));
@@ -252,7 +259,9 @@ impl ExtensionScanner {
                         paths.push(home.join(".mozilla/firefox"));
                     }
                     BrowserType::Brave => {
-                        paths.push(home.join(".config/BraveSoftware/Brave-Browser/Default/Extensions"));
+                        paths.push(
+                            home.join(".config/BraveSoftware/Brave-Browser/Default/Extensions"),
+                        );
                     }
                     BrowserType::Opera => {
                         paths.push(home.join(".config/opera/Extensions"));
@@ -266,10 +275,18 @@ impl ExtensionScanner {
             if let Some(home) = dirs::home_dir() {
                 match browser {
                     BrowserType::Chrome => {
-                        paths.push(home.join("Library/Application Support/Google/Chrome/Default/Extensions"));
+                        paths.push(
+                            home.join(
+                                "Library/Application Support/Google/Chrome/Default/Extensions",
+                            ),
+                        );
                     }
                     BrowserType::Edge => {
-                        paths.push(home.join("Library/Application Support/Microsoft Edge/Default/Extensions"));
+                        paths.push(
+                            home.join(
+                                "Library/Application Support/Microsoft Edge/Default/Extensions",
+                            ),
+                        );
                     }
                     BrowserType::Firefox => {
                         paths.push(home.join("Library/Application Support/Firefox/Profiles"));
@@ -278,7 +295,9 @@ impl ExtensionScanner {
                         paths.push(home.join("Library/Application Support/BraveSoftware/Brave-Browser/Default/Extensions"));
                     }
                     BrowserType::Opera => {
-                        paths.push(home.join("Library/Application Support/com.operasoftware.Opera/Extensions"));
+                        paths.push(home.join(
+                            "Library/Application Support/com.operasoftware.Opera/Extensions",
+                        ));
                     }
                 }
             }
@@ -356,11 +375,8 @@ impl ExtensionScanner {
                 let manifest_path = version_dir.path().join("manifest.json");
                 if let Ok(manifest) = self.parse_chromium_manifest(&manifest_path) {
                     let permissions = self.parse_chromium_permissions(&manifest);
-                    let (risk, reasons) = self.assess_extension_risk(
-                        &ext_id,
-                        &manifest.name,
-                        &permissions,
-                    );
+                    let (risk, reasons) =
+                        self.assess_extension_risk(&ext_id, &manifest.name, &permissions);
 
                     extensions.push(BrowserExtension {
                         id: ext_id.clone(),
@@ -383,8 +399,7 @@ impl ExtensionScanner {
 
     /// Parse Chromium manifest.json.
     fn parse_chromium_manifest(&self, path: &PathBuf) -> Result<ChromiumManifest> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| Error::file_read(path, e))?;
+        let content = fs::read_to_string(path).map_err(|e| Error::file_read(path, e))?;
 
         serde_json::from_str(&content)
             .map_err(|e| Error::Internal(format!("Failed to parse manifest: {}", e)))
@@ -627,8 +642,7 @@ mod tests {
         let scanner = ExtensionScanner::new();
 
         // Test suspicious name
-        let (risk, reasons) =
-            scanner.assess_extension_risk("test-id", "Free VPN Extension", &[]);
+        let (risk, reasons) = scanner.assess_extension_risk("test-id", "Free VPN Extension", &[]);
         assert!(risk >= ExtensionRisk::Medium);
         assert!(!reasons.is_empty());
 

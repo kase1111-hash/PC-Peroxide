@@ -170,7 +170,10 @@ impl MatchResult {
 }
 
 /// Convert a YARA RuleMatch to a Detection.
-fn yara_match_to_detection(path: &Path, rule_match: &crate::detection::yara::RuleMatch) -> Detection {
+fn yara_match_to_detection(
+    path: &Path,
+    rule_match: &crate::detection::yara::RuleMatch,
+) -> Detection {
     let severity = rule_match
         .meta
         .severity
@@ -185,11 +188,7 @@ fn yara_match_to_detection(path: &Path, rule_match: &crate::detection::yara::Rul
         .and_then(ThreatCategory::parse)
         .unwrap_or(ThreatCategory::Generic);
 
-    let description = rule_match
-        .meta
-        .description
-        .clone()
-        .unwrap_or_default();
+    let description = rule_match.meta.description.clone().unwrap_or_default();
 
     Detection {
         path: path.to_path_buf(),
@@ -204,7 +203,9 @@ fn yara_match_to_detection(path: &Path, rule_match: &crate::detection::yara::Rul
 }
 
 /// Pick the highest-severity YARA match from a list.
-fn pick_best_yara_match(matches: &[crate::detection::yara::RuleMatch]) -> Option<&crate::detection::yara::RuleMatch> {
+fn pick_best_yara_match(
+    matches: &[crate::detection::yara::RuleMatch],
+) -> Option<&crate::detection::yara::RuleMatch> {
     matches.iter().max_by_key(|m| {
         m.meta
             .severity
@@ -592,7 +593,10 @@ mod tests {
         file.write_all(&data).unwrap();
 
         let detection = engine.scan_file(file.path()).unwrap();
-        assert!(detection.is_some(), "YARA should detect ransomware strings in PE");
+        assert!(
+            detection.is_some(),
+            "YARA should detect ransomware strings in PE"
+        );
 
         let det = detection.unwrap();
         assert_eq!(det.method, DetectionMethod::Yara);
@@ -610,7 +614,10 @@ mod tests {
         file.write_all(data).unwrap();
 
         let detection = engine.scan_file(file.path()).unwrap();
-        assert!(detection.is_some(), "YARA should detect crypto miner strings");
+        assert!(
+            detection.is_some(),
+            "YARA should detect crypto miner strings"
+        );
 
         let det = detection.unwrap();
         assert_eq!(det.method, DetectionMethod::Yara);
@@ -630,8 +637,14 @@ mod tests {
         file.write_all(&data).unwrap();
 
         let details = engine.scan_file_detailed(file.path()).unwrap();
-        assert!(!details.yara_matches.is_empty(), "Detailed scan should include YARA matches");
-        assert!(details.yara_matches.iter().any(|m| m.rule_name == "Ransomware_Generic"));
+        assert!(
+            !details.yara_matches.is_empty(),
+            "Detailed scan should include YARA matches"
+        );
+        assert!(details
+            .yara_matches
+            .iter()
+            .any(|m| m.rule_name == "Ransomware_Generic"));
     }
 
     #[test]

@@ -109,8 +109,7 @@ pub struct Connection {
 impl Connection {
     /// Check if this is a loopback connection.
     pub fn is_loopback(&self) -> bool {
-        self.local_addr.is_loopback()
-            || self.remote_addr.is_some_and(|a| a.is_loopback())
+        self.local_addr.is_loopback() || self.remote_addr.is_some_and(|a| a.is_loopback())
     }
 
     /// Check if this is a listening socket.
@@ -193,7 +192,6 @@ impl ConnectionScanner {
     #[cfg(target_os = "linux")]
     fn parse_proc_net_tcp(&self, path: &str, conn_type: ConnectionType) -> Result<Vec<Connection>> {
         use std::fs;
-        
 
         let content = match fs::read_to_string(path) {
             Ok(c) => c,
@@ -375,7 +373,6 @@ impl ConnectionScanner {
     #[cfg(target_os = "linux")]
     fn find_pid_by_inode(&self, inode: u64) -> Option<u32> {
         use std::fs;
-        
 
         if inode == 0 {
             return None;
@@ -559,8 +556,16 @@ impl ConnectionScanner {
             // Parse remote address
             let remote = parts[4];
             let (remote_addr, remote_port) = Self::parse_macos_address(remote);
-            let remote_addr = if remote_port == Some(0) { None } else { remote_addr };
-            let remote_port = if remote_port == Some(0) { None } else { remote_port };
+            let remote_addr = if remote_port == Some(0) {
+                None
+            } else {
+                remote_addr
+            };
+            let remote_port = if remote_port == Some(0) {
+                None
+            } else {
+                remote_port
+            };
 
             // Parse state
             let state = match parts.get(5).map(|s| s.to_uppercase()).as_deref() {
@@ -601,7 +606,10 @@ impl ConnectionScanner {
         // Format can be "*.port" for listening or "addr.port"
         if addr_str.starts_with("*.") {
             let port: u16 = addr_str[2..].parse().unwrap_or(0);
-            return (Some(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)), Some(port));
+            return (
+                Some(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                Some(port),
+            );
         }
 
         // Find last dot for port
@@ -610,7 +618,9 @@ impl ConnectionScanner {
             let port_part = &addr_str[last_dot + 1..];
 
             let port: u16 = port_part.parse().unwrap_or(0);
-            let addr: IpAddr = addr_part.parse().unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+            let addr: IpAddr = addr_part
+                .parse()
+                .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
 
             (Some(addr), Some(port))
         } else {
@@ -694,8 +704,17 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_tcp_state_mapping() {
-        assert_eq!(ConnectionScanner::tcp_state_from_num(1), ConnectionState::Established);
-        assert_eq!(ConnectionScanner::tcp_state_from_num(10), ConnectionState::Listen);
-        assert_eq!(ConnectionScanner::tcp_state_from_num(99), ConnectionState::Unknown);
+        assert_eq!(
+            ConnectionScanner::tcp_state_from_num(1),
+            ConnectionState::Established
+        );
+        assert_eq!(
+            ConnectionScanner::tcp_state_from_num(10),
+            ConnectionState::Listen
+        );
+        assert_eq!(
+            ConnectionScanner::tcp_state_from_num(99),
+            ConnectionState::Unknown
+        );
     }
 }

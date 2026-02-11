@@ -27,13 +27,11 @@ pub struct Config {
 impl Config {
     /// Load configuration from a JSON file.
     pub fn load(path: &Path) -> Result<Self> {
-        let contents = std::fs::read_to_string(path).map_err(|e| {
-            Error::ConfigLoad(format!("Failed to read config file: {}", e))
-        })?;
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| Error::ConfigLoad(format!("Failed to read config file: {}", e)))?;
 
-        serde_json::from_str(&contents).map_err(|e| {
-            Error::ConfigLoad(format!("Failed to parse config file: {}", e))
-        })
+        serde_json::from_str(&contents)
+            .map_err(|e| Error::ConfigLoad(format!("Failed to parse config file: {}", e)))
     }
 
     /// Save configuration to a JSON file.
@@ -47,9 +45,8 @@ impl Config {
             })?;
         }
 
-        std::fs::write(path, contents).map_err(|e| {
-            Error::ConfigSave(format!("Failed to write config file: {}", e))
-        })
+        std::fs::write(path, contents)
+            .map_err(|e| Error::ConfigSave(format!("Failed to write config file: {}", e)))
     }
 
     /// Load configuration from default location, or create default if not exists.
@@ -438,7 +435,10 @@ mod tests {
         config.save(&path).unwrap();
 
         let loaded = Config::load(&path).unwrap();
-        assert_eq!(loaded.scan.skip_large_files_mb, config.scan.skip_large_files_mb);
+        assert_eq!(
+            loaded.scan.skip_large_files_mb,
+            config.scan.skip_large_files_mb
+        );
     }
 
     #[test]

@@ -53,11 +53,9 @@ impl HeuristicEngine {
     /// Analyze a file and return heuristic results.
     pub fn analyze_file(&self, path: &Path) -> Result<HeuristicResult> {
         // Read file contents
-        let data = std::fs::read(path).map_err(|e| {
-            crate::core::error::Error::FileRead {
-                path: path.to_path_buf(),
-                source: e,
-            }
+        let data = std::fs::read(path).map_err(|e| crate::core::error::Error::FileRead {
+            path: path.to_path_buf(),
+            source: e,
         })?;
 
         self.analyze_bytes(&data, path)
@@ -117,14 +115,14 @@ impl HeuristicEngine {
                 pe_info
                     .sections
                     .iter()
-                    .filter(|section| section.entropy > 7.5)  // Raised threshold from 7.0 to 7.5
+                    .filter(|section| section.entropy > 7.5) // Raised threshold from 7.0 to 7.5
                     .map(|section| {
                         (
                             format!(
                                 "Very high entropy section: {} ({:.2})",
                                 section.name, section.entropy
                             ),
-                            8u8,  // Reduced from 15 to 8
+                            8u8, // Reduced from 15 to 8
                         )
                     })
                     .collect()
@@ -140,12 +138,13 @@ impl HeuristicEngine {
         if file_entropy > 7.8 {
             result.add_indicator(
                 format!("Very high file entropy: {:.2}", file_entropy),
-                10,  // Reduced from 20 to 10
+                10, // Reduced from 20 to 10
             );
-        } else if file_entropy > 7.5 {  // Raised threshold from 7.0 to 7.5
+        } else if file_entropy > 7.5 {
+            // Raised threshold from 7.0 to 7.5
             result.add_indicator(
                 format!("High file entropy: {:.2}", file_entropy),
-                5,  // Reduced from 10 to 5
+                5, // Reduced from 10 to 5
             );
         }
 
@@ -221,7 +220,12 @@ mod tests {
     #[test]
     fn test_heuristic_engine_creation() {
         let engine = HeuristicEngine::new();
-        assert!(engine.scorer.calculate_score(&HeuristicResult::new("/test".into())) == 0);
+        assert!(
+            engine
+                .scorer
+                .calculate_score(&HeuristicResult::new("/test".into()))
+                == 0
+        );
     }
 
     #[test]

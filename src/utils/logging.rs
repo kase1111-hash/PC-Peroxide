@@ -166,12 +166,11 @@ pub fn cleanup_old_logs(log_dir: &PathBuf, keep_days: u32) -> Result<u32> {
         return Ok(0);
     }
 
-    let entries = fs::read_dir(log_dir).map_err(|e| {
-        crate::core::error::Error::DirectoryAccess {
+    let entries =
+        fs::read_dir(log_dir).map_err(|e| crate::core::error::Error::DirectoryAccess {
             path: log_dir.clone(),
             source: e,
-        }
-    })?;
+        })?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -204,9 +203,8 @@ impl FileLogger {
     /// Create a new file logger.
     pub fn new(path: &PathBuf) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                crate::core::error::Error::file_write(path, e)
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|e| crate::core::error::Error::file_write(path, e))?;
         }
 
         let file = OpenOptions::new()

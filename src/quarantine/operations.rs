@@ -62,10 +62,7 @@ impl SecureOperations {
 
         // Rename to random name before deletion
         let random_name = self.generate_random_filename();
-        let random_path = path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join(&random_name);
+        let random_path = path.parent().unwrap_or(Path::new(".")).join(&random_name);
 
         fs::rename(path, &random_path).map_err(|e| Error::FileDelete {
             path: path.to_path_buf(),
@@ -166,9 +163,7 @@ impl SecureOperations {
                     cleanup_err
                 );
             }
-            return Err(Error::Internal(
-                "File copy verification failed".to_string(),
-            ));
+            return Err(Error::Internal("File copy verification failed".to_string()));
         }
 
         // Delete source
@@ -207,10 +202,7 @@ impl SecureOperations {
         }
 
         // Try to open for writing
-        let result = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path);
+        let result = OpenOptions::new().read(true).write(true).open(path);
 
         match result {
             Ok(_) => Ok(()),

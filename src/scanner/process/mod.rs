@@ -204,14 +204,23 @@ impl ProcessScanner {
         let name_lower = process.name.to_lowercase();
 
         // Check for name masquerading (looks like system process but from wrong location)
-        let system_names = ["svchost.exe", "csrss.exe", "lsass.exe", "services.exe", "smss.exe"];
+        let system_names = [
+            "svchost.exe",
+            "csrss.exe",
+            "lsass.exe",
+            "services.exe",
+            "smss.exe",
+        ];
         if system_names.iter().any(|n| name_lower == *n) {
             if let Some(ref path) = process.path {
                 let path_lower = path.to_string_lossy().to_lowercase();
                 if !path_lower.contains("system32") && !path_lower.contains("syswow64") {
                     result.add_indicator(SuspiciousIndicator::new(
                         "Potential masquerading",
-                        format!("System process name '{}' running from non-system location", process.name),
+                        format!(
+                            "System process name '{}' running from non-system location",
+                            process.name
+                        ),
                         60,
                     ));
                 }
@@ -259,7 +268,8 @@ impl ProcessScanner {
                 ));
             }
 
-            if cmdline_lower.contains("-windowstyle hidden") || cmdline_lower.contains("-w hidden") {
+            if cmdline_lower.contains("-windowstyle hidden") || cmdline_lower.contains("-w hidden")
+            {
                 result.add_indicator(SuspiciousIndicator::new(
                     "Hidden window",
                     "Process running with hidden window",
@@ -284,7 +294,10 @@ impl ProcessScanner {
                 // System processes should usually be spawned by System (PID 4) or smss
                 result.add_indicator(SuspiciousIndicator::new(
                     "Unusual parent process",
-                    format!("System process '{}' has unusual parent PID: {}", process.name, parent_pid),
+                    format!(
+                        "System process '{}' has unusual parent PID: {}",
+                        process.name, parent_pid
+                    ),
                     25,
                 ));
             }
@@ -292,7 +305,11 @@ impl ProcessScanner {
     }
 
     /// Scan process memory for suspicious patterns.
-    fn scan_process_memory(&self, process: &ProcessInfo, result: &mut ProcessScanResult) -> Result<()> {
+    fn scan_process_memory(
+        &self,
+        process: &ProcessInfo,
+        result: &mut ProcessScanResult,
+    ) -> Result<()> {
         // Get memory regions
         let regions = self.memory_scanner.get_regions(process.pid)?;
 
@@ -313,7 +330,10 @@ impl ProcessScanner {
                 stats.rwx_regions += 1;
                 result.add_indicator(SuspiciousIndicator::new(
                     "RWX memory region",
-                    format!("Process has read-write-execute memory at 0x{:x}", region.base_address),
+                    format!(
+                        "Process has read-write-execute memory at 0x{:x}",
+                        region.base_address
+                    ),
                     25,
                 ));
             }
@@ -333,7 +353,10 @@ impl ProcessScanner {
         for region in &regions {
             if region.protection.read && region.size < 10 * 1024 * 1024 {
                 // Only scan readable regions under 10MB
-                if let Ok(matches) = self.memory_scanner.scan_region(process.pid, region, patterns) {
+                if let Ok(matches) = self
+                    .memory_scanner
+                    .scan_region(process.pid, region, patterns)
+                {
                     for m in matches {
                         result.add_pattern_match(m);
                     }
@@ -366,8 +389,7 @@ mod tests {
 
     #[test]
     fn test_process_scan_result_with_path() {
-        let result = ProcessScanResult::new(1234, "test.exe")
-            .with_path("/usr/bin/test");
+        let result = ProcessScanResult::new(1234, "test.exe").with_path("/usr/bin/test");
         assert!(result.path.is_some());
     }
 

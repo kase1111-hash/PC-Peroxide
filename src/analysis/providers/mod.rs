@@ -194,7 +194,9 @@ impl InferenceEngine for MockProvider {
         use super::inference::*;
 
         if !self.available {
-            return Err(InferenceError::Unavailable("Mock provider disabled".to_string()));
+            return Err(InferenceError::Unavailable(
+                "Mock provider disabled".to_string(),
+            ));
         }
 
         // Simulate analysis based on content
@@ -269,8 +271,14 @@ mod tests {
 
     #[test]
     fn test_llm_provider_from_str() {
-        assert_eq!("ollama".parse::<LlmProvider>().unwrap(), LlmProvider::Ollama);
-        assert_eq!("openai".parse::<LlmProvider>().unwrap(), LlmProvider::OpenAi);
+        assert_eq!(
+            "ollama".parse::<LlmProvider>().unwrap(),
+            LlmProvider::Ollama
+        );
+        assert_eq!(
+            "openai".parse::<LlmProvider>().unwrap(),
+            LlmProvider::OpenAi
+        );
         assert_eq!("none".parse::<LlmProvider>().unwrap(), LlmProvider::None);
     }
 

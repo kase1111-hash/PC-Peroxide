@@ -133,8 +133,7 @@ impl ScanView {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Cancel Scan")
-                                        .color(Color32::WHITE),
+                                    RichText::new("Cancel Scan").color(Color32::WHITE),
                                 )
                                 .fill(self.theme.danger)
                                 .min_size(Vec2::new(120.0, 36.0)),
@@ -165,7 +164,10 @@ impl ScanView {
                             ui.horizontal(|ui| {
                                 let severity_color =
                                     self.theme.severity_color(&format!("{:?}", threat.severity));
-                                ui.colored_label(severity_color, format!("[{:?}]", threat.severity));
+                                ui.colored_label(
+                                    severity_color,
+                                    format!("[{:?}]", threat.severity),
+                                );
                                 ui.label(&threat.threat_name);
                                 ui.label(
                                     RichText::new(threat.path.display().to_string())
@@ -268,9 +270,7 @@ impl ScanView {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Start Scan")
-                                        .size(16.0)
-                                        .color(Color32::WHITE),
+                                    RichText::new("Start Scan").size(16.0).color(Color32::WHITE),
                                 )
                                 .fill(self.theme.primary)
                                 .min_size(Vec2::new(150.0, 45.0)),

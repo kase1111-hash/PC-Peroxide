@@ -97,7 +97,11 @@ pub struct RegistryEntry {
 
 impl RegistryEntry {
     /// Create a new registry entry.
-    pub fn new(key_path: impl Into<String>, value_name: impl Into<String>, value_data: impl Into<String>) -> Self {
+    pub fn new(
+        key_path: impl Into<String>,
+        value_name: impl Into<String>,
+        value_data: impl Into<String>,
+    ) -> Self {
         let data = value_data.into();
         let (executable_path, arguments) = Self::parse_command_line(&data);
 
@@ -125,7 +129,11 @@ impl RegistryEntry {
                 let args = cmd[end_quote + 2..].trim();
                 return (
                     Some(PathBuf::from(path)),
-                    if args.is_empty() { None } else { Some(args.to_string()) },
+                    if args.is_empty() {
+                        None
+                    } else {
+                        Some(args.to_string())
+                    },
                 );
             }
         }
@@ -136,7 +144,11 @@ impl RegistryEntry {
             let args = cmd[space_idx + 1..].trim();
             (
                 Some(PathBuf::from(path)),
-                if args.is_empty() { None } else { Some(args.to_string()) },
+                if args.is_empty() {
+                    None
+                } else {
+                    Some(args.to_string())
+                },
             )
         } else {
             (Some(PathBuf::from(cmd)), None)
@@ -252,7 +264,9 @@ impl RegistryScanner {
             use winreg::RegKey;
 
             for (path, description) in AUTORUN_PATHS {
-                if let Some(entry) = self.scan_registry_key(path, description, PersistenceType::RegistryRun) {
+                if let Some(entry) =
+                    self.scan_registry_key(path, description, PersistenceType::RegistryRun)
+                {
                     entries.extend(entry);
                 }
             }
@@ -276,7 +290,9 @@ impl RegistryScanner {
             use winreg::RegKey;
 
             let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-            if let Ok(ifeo) = hklm.open_subkey(r"Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options") {
+            if let Ok(ifeo) = hklm.open_subkey(
+                r"Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
+            ) {
                 for key_name in ifeo.enum_keys().filter_map(|k| k.ok()) {
                     if let Ok(subkey) = ifeo.open_subkey(&key_name) {
                         // Check for Debugger value (IFEO hijacking)
@@ -312,10 +328,7 @@ impl RegistryScanner {
                                     format!("{} (GlobalFlag)", key_name),
                                     format!("{}\\{}", IFEO_PATH, key_name),
                                 )
-                                .mark_suspicious(
-                                    "Silent process exit monitoring enabled",
-                                    50,
-                                );
+                                .mark_suspicious("Silent process exit monitoring enabled", 50);
                                 entries.push(entry);
                             }
                         }
@@ -340,7 +353,9 @@ impl RegistryScanner {
             use winreg::RegKey;
 
             let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-            if let Ok(windows_key) = hklm.open_subkey(r"Software\Microsoft\Windows NT\CurrentVersion\Windows") {
+            if let Ok(windows_key) =
+                hklm.open_subkey(r"Software\Microsoft\Windows NT\CurrentVersion\Windows")
+            {
                 // Check if AppInit_DLLs is enabled
                 let load_appinit: u32 = windows_key.get_value("LoadAppInit_DLLs").unwrap_or(0);
 
@@ -371,7 +386,9 @@ impl RegistryScanner {
             }
 
             // Also check 64-bit path on Wow64
-            if let Ok(windows_key) = hklm.open_subkey(r"Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\Windows") {
+            if let Ok(windows_key) = hklm
+                .open_subkey(r"Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\Windows")
+            {
                 let load_appinit: u32 = windows_key.get_value("LoadAppInit_DLLs").unwrap_or(0);
 
                 if load_appinit != 0 {
@@ -415,7 +432,9 @@ impl RegistryScanner {
             use winreg::RegKey;
 
             let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-            if let Ok(winlogon) = hklm.open_subkey(r"Software\Microsoft\Windows NT\CurrentVersion\Winlogon") {
+            if let Ok(winlogon) =
+                hklm.open_subkey(r"Software\Microsoft\Windows NT\CurrentVersion\Winlogon")
+            {
                 // Check Shell (should be explorer.exe)
                 if let Ok(shell) = winlogon.get_value::<String, _>("Shell") {
                     let shell_lower = shell.to_lowercase();
@@ -426,10 +445,7 @@ impl RegistryScanner {
                             WINLOGON_PATH,
                         )
                         .with_path(&shell)
-                        .mark_suspicious(
-                            format!("Modified Winlogon Shell: {}", shell),
-                            80,
-                        );
+                        .mark_suspicious(format!("Modified Winlogon Shell: {}", shell), 80);
                         entries.push(entry);
                     }
                 }
@@ -448,10 +464,7 @@ impl RegistryScanner {
                             "Userinit",
                             WINLOGON_PATH,
                         )
-                        .mark_suspicious(
-                            format!("Modified Userinit: {}", userinit),
-                            75,
-                        );
+                        .mark_suspicious(format!("Modified Userinit: {}", userinit), 75);
                         entries.push(entry);
                     }
                 }
@@ -464,10 +477,7 @@ impl RegistryScanner {
                             "Notify",
                             WINLOGON_PATH,
                         )
-                        .mark_suspicious(
-                            format!("Winlogon Notify package: {}", notify),
-                            60,
-                        );
+                        .mark_suspicious(format!("Winlogon Notify package: {}", notify), 60);
                         entries.push(entry);
                     }
                 }
@@ -493,27 +503,28 @@ impl RegistryScanner {
             if let Ok(lsa) = hklm.open_subkey(r"SYSTEM\CurrentControlSet\Control\Lsa") {
                 // Check Security Packages
                 if let Ok(packages) = lsa.get_value::<Vec<String>, _>("Security Packages") {
-                    let known_packages = ["kerberos", "msv1_0", "schannel", "wdigest", "tspkg", "pku2u", "cloudap"];
+                    let known_packages = [
+                        "kerberos", "msv1_0", "schannel", "wdigest", "tspkg", "pku2u", "cloudap",
+                    ];
 
                     for pkg in packages {
                         let pkg_lower = pkg.to_lowercase();
                         if !known_packages.contains(&pkg_lower.as_str()) && !pkg.is_empty() {
-                            let entry = PersistenceEntry::new(
-                                PersistenceType::LsaPackage,
-                                &pkg,
-                                LSA_PATH,
-                            )
-                            .mark_suspicious(
-                                format!("Unknown LSA Security Package: {}", pkg),
-                                70,
-                            );
+                            let entry =
+                                PersistenceEntry::new(PersistenceType::LsaPackage, &pkg, LSA_PATH)
+                                    .mark_suspicious(
+                                        format!("Unknown LSA Security Package: {}", pkg),
+                                        70,
+                                    );
                             entries.push(entry);
                         }
                     }
                 }
 
                 // Check Authentication Packages
-                if let Ok(auth_packages) = lsa.get_value::<Vec<String>, _>("Authentication Packages") {
+                if let Ok(auth_packages) =
+                    lsa.get_value::<Vec<String>, _>("Authentication Packages")
+                {
                     let known_auth = ["msv1_0"];
 
                     for pkg in auth_packages {
@@ -534,7 +545,9 @@ impl RegistryScanner {
                 }
 
                 // Check Notification Packages
-                if let Ok(notify_packages) = lsa.get_value::<Vec<String>, _>("Notification Packages") {
+                if let Ok(notify_packages) =
+                    lsa.get_value::<Vec<String>, _>("Notification Packages")
+                {
                     let known_notify = ["scecli"];
 
                     for pkg in notify_packages {
@@ -595,7 +608,8 @@ impl RegistryScanner {
                                     format!("{}\\{}", SERVICES_PATH, service_name),
                                 );
 
-                                let (exe_path, args) = RegistryEntry::parse_command_line(&image_path);
+                                let (exe_path, args) =
+                                    RegistryEntry::parse_command_line(&image_path);
                                 if let Some(ref path) = exe_path {
                                     entry = entry.with_path(path);
                                 }
@@ -664,7 +678,9 @@ impl RegistryScanner {
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     fn is_known_entry(&self, name: &str) -> bool {
         let name_lower = name.to_lowercase();
-        self.known_entries.iter().any(|k| name_lower.contains(&k.to_lowercase()))
+        self.known_entries
+            .iter()
+            .any(|k| name_lower.contains(&k.to_lowercase()))
     }
 
     /// Scan a specific registry key for autorun entries.
@@ -699,11 +715,7 @@ impl RegistryScanner {
                 let is_known = self.is_known_entry(&name);
                 let suspicious_score = self.check_path_suspicious(&data);
 
-                let mut entry = PersistenceEntry::new(
-                    persistence_type,
-                    &name,
-                    path,
-                );
+                let mut entry = PersistenceEntry::new(persistence_type, &name, path);
 
                 let (exe_path, args) = RegistryEntry::parse_command_line(&data);
                 if let Some(ref p) = exe_path {
@@ -753,13 +765,13 @@ mod tests {
 
     #[test]
     fn test_registry_entry_parse_unquoted_path() {
-        let entry = RegistryEntry::new(
-            r"HKCU\Software\Test",
-            "TestApp",
-            r"C:\Test\app.exe /silent",
-        );
+        let entry =
+            RegistryEntry::new(r"HKCU\Software\Test", "TestApp", r"C:\Test\app.exe /silent");
 
-        assert_eq!(entry.executable_path, Some(PathBuf::from(r"C:\Test\app.exe")));
+        assert_eq!(
+            entry.executable_path,
+            Some(PathBuf::from(r"C:\Test\app.exe"))
+        );
         assert_eq!(entry.arguments, Some("/silent".to_string()));
     }
 
@@ -775,7 +787,10 @@ mod tests {
         let scanner = RegistryScanner::new();
 
         // Normal path
-        assert_eq!(scanner.check_path_suspicious(r"C:\Program Files\App\app.exe"), 0);
+        assert_eq!(
+            scanner.check_path_suspicious(r"C:\Program Files\App\app.exe"),
+            0
+        );
 
         // Suspicious - temp folder
         assert!(scanner.check_path_suspicious(r"C:\Users\User\AppData\Local\Temp\mal.exe") > 0);

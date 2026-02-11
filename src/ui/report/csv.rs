@@ -118,10 +118,7 @@ impl CsvExporter {
         }
 
         for summary in summaries {
-            let end_time = summary
-                .end_time
-                .map(|t| t.to_string())
-                .unwrap_or_default();
+            let end_time = summary.end_time.map(|t| t.to_string()).unwrap_or_default();
             writeln!(
                 file,
                 "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
@@ -150,7 +147,10 @@ impl CsvExporter {
 
     /// Escape a CSV field.
     fn escape_csv(field: &str) -> String {
-        if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r')
+        if field.contains(',')
+            || field.contains('"')
+            || field.contains('\n')
+            || field.contains('\r')
         {
             format!("\"{}\"", field.replace('"', "\"\""))
         } else {
@@ -173,11 +173,11 @@ mod tests {
     fn test_escape_csv() {
         assert_eq!(CsvExporter::escape_csv("simple"), "simple");
         assert_eq!(CsvExporter::escape_csv("with,comma"), "\"with,comma\"");
+        assert_eq!(CsvExporter::escape_csv("with\"quote"), "\"with\"\"quote\"");
         assert_eq!(
-            CsvExporter::escape_csv("with\"quote"),
-            "\"with\"\"quote\""
+            CsvExporter::escape_csv("with\nnewline"),
+            "\"with\nnewline\""
         );
-        assert_eq!(CsvExporter::escape_csv("with\nnewline"), "\"with\nnewline\"");
     }
 
     #[test]

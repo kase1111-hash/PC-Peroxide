@@ -164,8 +164,8 @@ impl SignatureUpdater {
     #[allow(dead_code)]
     pub fn import_from_file(&self, path: &std::path::Path) -> Result<usize, String> {
         // Read and parse signature file
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
         // In a real implementation, this would:
         // 1. Validate file format

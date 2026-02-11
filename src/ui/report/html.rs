@@ -3,7 +3,7 @@
 //! Generates styled HTML reports for scan results.
 
 use crate::core::error::{Error, Result};
-use crate::core::types::{ScanSummary, ScanStatus};
+use crate::core::types::{ScanStatus, ScanSummary};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -24,7 +24,8 @@ impl HtmlReporter {
     pub fn generate(&self, summary: &ScanSummary, output_path: &Path) -> Result<()> {
         let html = self.render(summary);
         let mut file = File::create(output_path).map_err(|e| Error::Io(e.to_string()))?;
-        file.write_all(html.as_bytes()).map_err(|e| Error::Io(e.to_string()))?;
+        file.write_all(html.as_bytes())
+            .map_err(|e| Error::Io(e.to_string()))?;
         Ok(())
     }
 
@@ -71,7 +72,10 @@ impl HtmlReporter {
 
         let duration = summary.duration_secs().unwrap_or(0);
         let scan_rate = if summary.files_scanned > 0 && duration > 0 {
-            format!("{:.1} files/sec", summary.files_scanned as f64 / duration as f64)
+            format!(
+                "{:.1} files/sec",
+                summary.files_scanned as f64 / duration as f64
+            )
         } else {
             "N/A".to_string()
         };

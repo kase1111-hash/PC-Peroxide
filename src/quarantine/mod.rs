@@ -169,30 +169,22 @@ mod tests {
 
     #[test]
     fn test_quarantine_result_failure() {
-        let result = QuarantineResult::failure(
-            PathBuf::from("/original/path"),
-            "Test error".to_string(),
-        );
+        let result =
+            QuarantineResult::failure(PathBuf::from("/original/path"), "Test error".to_string());
         assert!(!result.success);
         assert_eq!(result.error, Some("Test error".to_string()));
     }
 
     #[test]
     fn test_restore_result_success() {
-        let result = RestoreResult::success(
-            "test-id".to_string(),
-            PathBuf::from("/restored/path"),
-        );
+        let result = RestoreResult::success("test-id".to_string(), PathBuf::from("/restored/path"));
         assert!(result.success);
         assert!(result.error.is_none());
     }
 
     #[test]
     fn test_restore_result_failure() {
-        let result = RestoreResult::failure(
-            "test-id".to_string(),
-            "Restore failed".to_string(),
-        );
+        let result = RestoreResult::failure("test-id".to_string(), "Restore failed".to_string());
         assert!(!result.success);
         assert!(result.error.is_some());
     }

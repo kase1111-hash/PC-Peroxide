@@ -376,10 +376,22 @@ mod tests {
 
     #[test]
     fn test_threat_intent_from_str() {
-        assert_eq!("ransomware".parse::<ThreatIntent>().unwrap(), ThreatIntent::Ransomware);
-        assert_eq!("TROJAN".parse::<ThreatIntent>().unwrap(), ThreatIntent::Trojan);
-        assert_eq!("benign".parse::<ThreatIntent>().unwrap(), ThreatIntent::Benign);
-        assert_eq!("unknown_type".parse::<ThreatIntent>().unwrap(), ThreatIntent::Unknown);
+        assert_eq!(
+            "ransomware".parse::<ThreatIntent>().unwrap(),
+            ThreatIntent::Ransomware
+        );
+        assert_eq!(
+            "TROJAN".parse::<ThreatIntent>().unwrap(),
+            ThreatIntent::Trojan
+        );
+        assert_eq!(
+            "benign".parse::<ThreatIntent>().unwrap(),
+            ThreatIntent::Benign
+        );
+        assert_eq!(
+            "unknown_type".parse::<ThreatIntent>().unwrap(),
+            ThreatIntent::Unknown
+        );
     }
 
     #[test]

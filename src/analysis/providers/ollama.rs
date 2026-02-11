@@ -72,7 +72,12 @@ impl OllamaProvider {
         &self,
         raw: &str,
         analysis_type: AnalysisType,
-    ) -> (String, f32, Option<MalwareClassification>, Vec<MitreMapping>) {
+    ) -> (
+        String,
+        f32,
+        Option<MalwareClassification>,
+        Vec<MitreMapping>,
+    ) {
         let mut confidence = 0.5;
         let mut classification = None;
 
@@ -80,11 +85,18 @@ impl OllamaProvider {
         let lower = raw.to_lowercase();
 
         // Determine confidence based on response certainty words
-        if lower.contains("definitely") || lower.contains("certainly") || lower.contains("clearly") {
+        if lower.contains("definitely") || lower.contains("certainly") || lower.contains("clearly")
+        {
             confidence = 0.9;
-        } else if lower.contains("likely") || lower.contains("probably") || lower.contains("appears to be") {
+        } else if lower.contains("likely")
+            || lower.contains("probably")
+            || lower.contains("appears to be")
+        {
             confidence = 0.75;
-        } else if lower.contains("possibly") || lower.contains("might be") || lower.contains("could be") {
+        } else if lower.contains("possibly")
+            || lower.contains("might be")
+            || lower.contains("could be")
+        {
             confidence = 0.5;
         } else if lower.contains("unlikely") || lower.contains("probably not") {
             confidence = 0.3;
@@ -150,7 +162,9 @@ impl OllamaProvider {
             ThreatIntent::Spyware
         } else if lower.contains("keylogger") || lower.contains("keystroke") {
             ThreatIntent::Keylogger
-        } else if lower.contains("downloader") || lower.contains("download") && lower.contains("payload") {
+        } else if lower.contains("downloader")
+            || lower.contains("download") && lower.contains("payload")
+        {
             ThreatIntent::Downloader
         } else if lower.contains("dropper") {
             ThreatIntent::Dropper
@@ -167,9 +181,25 @@ impl OllamaProvider {
     fn detect_family(&self, lower: &str) -> Option<String> {
         // Common malware families - expand as needed
         let families = [
-            "emotet", "trickbot", "ryuk", "conti", "lockbit", "revil", "sodinokibi",
-            "wannacry", "petya", "notpetya", "maze", "dridex", "qbot", "icedid",
-            "cobalt strike", "mimikatz", "metasploit", "empire", "covenant",
+            "emotet",
+            "trickbot",
+            "ryuk",
+            "conti",
+            "lockbit",
+            "revil",
+            "sodinokibi",
+            "wannacry",
+            "petya",
+            "notpetya",
+            "maze",
+            "dridex",
+            "qbot",
+            "icedid",
+            "cobalt strike",
+            "mimikatz",
+            "metasploit",
+            "empire",
+            "covenant",
         ];
 
         for family in families {
@@ -187,7 +217,10 @@ impl OllamaProvider {
 
         for (i, line) in lines.iter().enumerate() {
             let lower = line.to_lowercase();
-            if lower.contains("reason") || lower.contains("because") || lower.contains("explanation") {
+            if lower.contains("reason")
+                || lower.contains("because")
+                || lower.contains("explanation")
+            {
                 // Return this line and possibly the next
                 if i + 1 < lines.len() {
                     return format!("{} {}", line.trim(), lines[i + 1].trim());
@@ -249,11 +282,36 @@ impl OllamaProvider {
         let common_techniques = [
             ("powershell", "T1059.001", "PowerShell", "Execution"),
             ("cmd", "T1059.003", "Windows Command Shell", "Execution"),
-            ("scheduled task", "T1053.005", "Scheduled Task", "Persistence"),
-            ("registry run", "T1547.001", "Registry Run Keys", "Persistence"),
-            ("credential dump", "T1003", "OS Credential Dumping", "Credential Access"),
-            ("process injection", "T1055", "Process Injection", "Defense Evasion"),
-            ("dll injection", "T1055.001", "DLL Injection", "Defense Evasion"),
+            (
+                "scheduled task",
+                "T1053.005",
+                "Scheduled Task",
+                "Persistence",
+            ),
+            (
+                "registry run",
+                "T1547.001",
+                "Registry Run Keys",
+                "Persistence",
+            ),
+            (
+                "credential dump",
+                "T1003",
+                "OS Credential Dumping",
+                "Credential Access",
+            ),
+            (
+                "process injection",
+                "T1055",
+                "Process Injection",
+                "Defense Evasion",
+            ),
+            (
+                "dll injection",
+                "T1055.001",
+                "DLL Injection",
+                "Defense Evasion",
+            ),
         ];
 
         let lower = raw.to_lowercase();
@@ -276,7 +334,10 @@ impl OllamaProvider {
     fn get_mitre_info(&self, id: &str) -> (String, String) {
         // Basic lookup table - expand as needed
         match id {
-            "T1059" => ("Command and Scripting Interpreter".to_string(), "Execution".to_string()),
+            "T1059" => (
+                "Command and Scripting Interpreter".to_string(),
+                "Execution".to_string(),
+            ),
             "T1059.001" => ("PowerShell".to_string(), "Execution".to_string()),
             "T1059.003" => ("Windows Command Shell".to_string(), "Execution".to_string()),
             "T1059.005" => ("Visual Basic".to_string(), "Execution".to_string()),
@@ -285,14 +346,32 @@ impl OllamaProvider {
             "T1053" => ("Scheduled Task/Job".to_string(), "Persistence".to_string()),
             "T1053.005" => ("Scheduled Task".to_string(), "Persistence".to_string()),
             "T1547.001" => ("Registry Run Keys".to_string(), "Persistence".to_string()),
-            "T1003" => ("OS Credential Dumping".to_string(), "Credential Access".to_string()),
-            "T1055" => ("Process Injection".to_string(), "Defense Evasion".to_string()),
+            "T1003" => (
+                "OS Credential Dumping".to_string(),
+                "Credential Access".to_string(),
+            ),
+            "T1055" => (
+                "Process Injection".to_string(),
+                "Defense Evasion".to_string(),
+            ),
             "T1055.001" => ("DLL Injection".to_string(), "Defense Evasion".to_string()),
-            "T1027" => ("Obfuscated Files".to_string(), "Defense Evasion".to_string()),
-            "T1071" => ("Application Layer Protocol".to_string(), "Command and Control".to_string()),
-            "T1071.001" => ("Web Protocols".to_string(), "Command and Control".to_string()),
+            "T1027" => (
+                "Obfuscated Files".to_string(),
+                "Defense Evasion".to_string(),
+            ),
+            "T1071" => (
+                "Application Layer Protocol".to_string(),
+                "Command and Control".to_string(),
+            ),
+            "T1071.001" => (
+                "Web Protocols".to_string(),
+                "Command and Control".to_string(),
+            ),
             "T1566" => ("Phishing".to_string(), "Initial Access".to_string()),
-            "T1566.001" => ("Spearphishing Attachment".to_string(), "Initial Access".to_string()),
+            "T1566.001" => (
+                "Spearphishing Attachment".to_string(),
+                "Initial Access".to_string(),
+            ),
             _ => ("Unknown Technique".to_string(), "Unknown".to_string()),
         }
     }
@@ -313,7 +392,12 @@ impl OllamaProvider {
             if result.to_lowercase().starts_with(&prefix.to_lowercase()) {
                 // Use char-based slicing to avoid panic on UTF-8 boundaries
                 let prefix_chars = prefix.chars().count();
-                result = result.chars().skip(prefix_chars).collect::<String>().trim().to_string();
+                result = result
+                    .chars()
+                    .skip(prefix_chars)
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
             }
         }
 
@@ -473,13 +557,7 @@ mod tests {
 
     #[test]
     fn test_ollama_provider_creation() {
-        let provider = OllamaProvider::new(
-            "http://localhost:11434",
-            "llama3.2",
-            16384,
-            120,
-            0.3,
-        );
+        let provider = OllamaProvider::new("http://localhost:11434", "llama3.2", 16384, 120, 0.3);
         assert_eq!(provider.name(), "ollama");
         assert_eq!(provider.model_name(), "llama3.2");
     }

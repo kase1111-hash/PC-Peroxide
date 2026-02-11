@@ -144,15 +144,13 @@ impl PeroxideApp {
 
                 for (view, label, tooltip) in nav_items {
                     let is_selected = self.view == view;
-                    let button = egui::Button::new(
-                        egui::RichText::new(label)
-                            .size(15.0)
-                            .color(if is_selected {
-                                self.theme.primary
-                            } else {
-                                self.theme.text_primary
-                            }),
-                    )
+                    let button = egui::Button::new(egui::RichText::new(label).size(15.0).color(
+                        if is_selected {
+                            self.theme.primary
+                        } else {
+                            self.theme.text_primary
+                        },
+                    ))
                     .fill(if is_selected {
                         self.theme.primary.linear_multiply(0.15)
                     } else {
@@ -171,10 +169,7 @@ impl PeroxideApp {
                     ui.add_space(10.0);
 
                     // Version info
-                    ui.label(
-                        self.theme
-                            .label(&format!("v{}", env!("CARGO_PKG_VERSION"))),
-                    );
+                    ui.label(self.theme.label(&format!("v{}", env!("CARGO_PKG_VERSION"))));
 
                     ui.add_space(5.0);
 
@@ -271,7 +266,11 @@ impl PeroxideApp {
 
             match self.view {
                 View::Dashboard => {
-                    let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let scan_state = self
+                        .scan_state
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
                     let quarantine_count = self
                         .quarantine
                         .as_ref()
@@ -315,10 +314,11 @@ impl PeroxideApp {
                 }
                 View::Results => {
                     let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
-                    if let Some(action) =
-                        self.results_view
-                            .render(ui, scan_state.last_scan.as_ref(), &scan_state.threats_found)
-                    {
+                    if let Some(action) = self.results_view.render(
+                        ui,
+                        scan_state.last_scan.as_ref(),
+                        &scan_state.threats_found,
+                    ) {
                         drop(scan_state);
                         match action {
                             ResultsAction::Quarantine(path) => {
@@ -486,7 +486,11 @@ impl PeroxideApp {
         drop(state);
 
         // TODO: Spawn actual scan task
-        log::info!("Starting {:?} scan with {} custom paths", scan_type, paths.len());
+        log::info!(
+            "Starting {:?} scan with {} custom paths",
+            scan_type,
+            paths.len()
+        );
     }
 
     /// Cancel the current scan.
@@ -559,10 +563,7 @@ impl PeroxideApp {
             // Open file dialog
             if let Some(path) = rfd::FileDialog::new()
                 .set_title("Export Scan Results")
-                .add_filter(
-                    format.extension(),
-                    &[format.extension()],
-                )
+                .add_filter(format.extension(), &[format.extension()])
                 .save_file()
             {
                 let report_format = match format {
@@ -590,7 +591,12 @@ impl eframe::App for PeroxideApp {
         self.render_about(ctx);
 
         // Request repaint if scanning - use unwrap_or_else to recover from poisoned mutex
-        if self.scan_state.lock().unwrap_or_else(|e| e.into_inner()).is_scanning {
+        if self
+            .scan_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_scanning
+        {
             ctx.request_repaint();
         }
     }

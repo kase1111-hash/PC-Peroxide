@@ -49,9 +49,32 @@ impl ArchivedFile {
             let ext_lower = ext.to_lowercase();
             matches!(
                 ext_lower.as_str(),
-                "exe" | "dll" | "sys" | "scr" | "com" | "bat" | "cmd" | "ps1" | "vbs" | "js"
-                    | "jse" | "vbe" | "wsf" | "wsh" | "msi" | "jar" | "hta" | "lnk" | "pif"
-                    | "doc" | "docm" | "xls" | "xlsm" | "ppt" | "pptm" | "pdf"
+                "exe"
+                    | "dll"
+                    | "sys"
+                    | "scr"
+                    | "com"
+                    | "bat"
+                    | "cmd"
+                    | "ps1"
+                    | "vbs"
+                    | "js"
+                    | "jse"
+                    | "vbe"
+                    | "wsf"
+                    | "wsh"
+                    | "msi"
+                    | "jar"
+                    | "hta"
+                    | "lnk"
+                    | "pif"
+                    | "doc"
+                    | "docm"
+                    | "xls"
+                    | "xlsm"
+                    | "ppt"
+                    | "pptm"
+                    | "pdf"
             )
         } else {
             // No extension - might still be executable
@@ -133,7 +156,11 @@ impl ArchiveScanner {
     }
 
     /// List files from a ZIP reader.
-    fn list_zip_reader<R: Read + Seek>(&self, reader: R, source_path: &Path) -> Result<Vec<ArchivedFile>> {
+    fn list_zip_reader<R: Read + Seek>(
+        &self,
+        reader: R,
+        source_path: &Path,
+    ) -> Result<Vec<ArchivedFile>> {
         let mut archive = ZipArchive::new(reader).map_err(|e| Error::ArchiveError {
             path: source_path.to_path_buf(),
             source: Box::new(e),
@@ -212,7 +239,11 @@ impl ArchiveScanner {
 
             // Skip if too large
             if uncompressed_size > self.max_extract_size {
-                log::trace!("Skipping large file in archive: {} ({} bytes)", name, uncompressed_size);
+                log::trace!(
+                    "Skipping large file in archive: {} ({} bytes)",
+                    name,
+                    uncompressed_size
+                );
                 continue;
             }
 
@@ -250,10 +281,12 @@ impl ArchiveScanner {
             source: Box::new(e),
         })?;
 
-        let mut entry = archive.by_name(file_name).map_err(|e| Error::ArchiveError {
-            path: archive_path.to_path_buf(),
-            source: Box::new(e),
-        })?;
+        let mut entry = archive
+            .by_name(file_name)
+            .map_err(|e| Error::ArchiveError {
+                path: archive_path.to_path_buf(),
+                source: Box::new(e),
+            })?;
 
         if entry.size() > self.max_extract_size {
             return Err(Error::ArchiveError {
@@ -266,10 +299,12 @@ impl ArchiveScanner {
         }
 
         let mut content = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut content).map_err(|e| Error::ArchiveError {
-            path: archive_path.to_path_buf(),
-            source: Box::new(e),
-        })?;
+        entry
+            .read_to_end(&mut content)
+            .map_err(|e| Error::ArchiveError {
+                path: archive_path.to_path_buf(),
+                source: Box::new(e),
+            })?;
 
         Ok(content)
     }
@@ -413,10 +448,7 @@ mod tests {
             ArchiveScanner::archive_type(Path::new("file.7z")),
             Some(ArchiveType::SevenZip)
         );
-        assert_eq!(
-            ArchiveScanner::archive_type(Path::new("file.txt")),
-            None
-        );
+        assert_eq!(ArchiveScanner::archive_type(Path::new("file.txt")), None);
     }
 
     #[test]

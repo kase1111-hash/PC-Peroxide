@@ -97,7 +97,10 @@ impl FileType {
 
     /// Check if this file type is a document that can contain macros.
     pub fn is_macro_capable(&self) -> bool {
-        matches!(self, FileType::OfficeOle | FileType::OfficeXml | FileType::Pdf)
+        matches!(
+            self,
+            FileType::OfficeOle | FileType::OfficeXml | FileType::Pdf
+        )
     }
 
     /// Get MIME type string.
@@ -186,10 +189,7 @@ impl FileTypeDetector {
         // Mach-O binary (various magic numbers)
         if bytes.len() >= 4 {
             let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-            if matches!(
-                magic,
-                0xFEEDFACE | 0xFEEDFACF | 0xCAFEBABE | 0xBEBAFECA
-            ) {
+            if matches!(magic, 0xFEEDFACE | 0xFEEDFACF | 0xCAFEBABE | 0xBEBAFECA) {
                 return FileType::MachO;
             }
         }
@@ -423,31 +423,46 @@ mod tests {
     #[test]
     fn test_pe_detection() {
         let pe_header = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00";
-        assert_eq!(FileTypeDetector::detect_from_bytes(pe_header), FileType::Executable);
+        assert_eq!(
+            FileTypeDetector::detect_from_bytes(pe_header),
+            FileType::Executable
+        );
     }
 
     #[test]
     fn test_zip_detection() {
         let zip_header = b"PK\x03\x04\x14\x00\x00\x00";
-        assert_eq!(FileTypeDetector::detect_from_bytes(zip_header), FileType::Zip);
+        assert_eq!(
+            FileTypeDetector::detect_from_bytes(zip_header),
+            FileType::Zip
+        );
     }
 
     #[test]
     fn test_pdf_detection() {
         let pdf_header = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3";
-        assert_eq!(FileTypeDetector::detect_from_bytes(pdf_header), FileType::Pdf);
+        assert_eq!(
+            FileTypeDetector::detect_from_bytes(pdf_header),
+            FileType::Pdf
+        );
     }
 
     #[test]
     fn test_elf_detection() {
         let elf_header = b"\x7fELF\x02\x01\x01\x00";
-        assert_eq!(FileTypeDetector::detect_from_bytes(elf_header), FileType::Elf);
+        assert_eq!(
+            FileTypeDetector::detect_from_bytes(elf_header),
+            FileType::Elf
+        );
     }
 
     #[test]
     fn test_rar_detection() {
         let rar_header = b"Rar!\x1a\x07\x00";
-        assert_eq!(FileTypeDetector::detect_from_bytes(rar_header), FileType::Rar);
+        assert_eq!(
+            FileTypeDetector::detect_from_bytes(rar_header),
+            FileType::Rar
+        );
     }
 
     #[test]

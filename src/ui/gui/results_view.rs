@@ -71,7 +71,11 @@ impl ResultsView {
 
             // Summary cards
             let cards = [
-                ("Files Scanned", summary.files_scanned.to_string(), self.theme.text_primary),
+                (
+                    "Files Scanned",
+                    summary.files_scanned.to_string(),
+                    self.theme.text_primary,
+                ),
                 (
                     "Threats Found",
                     summary.threats_found.to_string(),
@@ -84,10 +88,7 @@ impl ResultsView {
                 ("Errors", summary.errors.to_string(), self.theme.warning),
                 (
                     "Duration",
-                    format!(
-                        "{}s",
-                        summary.duration_secs().unwrap_or(0)
-                    ),
+                    format!("{}s", summary.duration_secs().unwrap_or(0)),
                     self.theme.text_primary,
                 ),
             ];
@@ -162,7 +163,10 @@ impl ResultsView {
                         .unwrap_or_else(|| "All".to_string()),
                 )
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.severity_filter.is_none(), "All").clicked() {
+                    if ui
+                        .selectable_label(self.severity_filter.is_none(), "All")
+                        .clicked()
+                    {
                         self.severity_filter = None;
                     }
                     for severity in [
@@ -172,7 +176,10 @@ impl ResultsView {
                         Severity::Low,
                     ] {
                         if ui
-                            .selectable_label(self.severity_filter == Some(severity), format!("{:?}", severity))
+                            .selectable_label(
+                                self.severity_filter == Some(severity),
+                                format!("{:?}", severity),
+                            )
                             .clicked()
                         {
                             self.severity_filter = Some(severity);
@@ -209,7 +216,12 @@ impl ResultsView {
                             if !self.search_filter.is_empty() {
                                 let search = self.search_filter.to_lowercase();
                                 if !t.threat_name.to_lowercase().contains(&search)
-                                    && !t.path.display().to_string().to_lowercase().contains(&search)
+                                    && !t
+                                        .path
+                                        .display()
+                                        .to_string()
+                                        .to_lowercase()
+                                        .contains(&search)
                                 {
                                     return false;
                                 }
@@ -265,9 +277,10 @@ impl ResultsView {
                                         ui.horizontal(|ui| {
                                             // Severity
                                             ui.allocate_ui(Vec2::new(80.0, 25.0), |ui| {
-                                                let color = self
-                                                    .theme
-                                                    .severity_color(&format!("{:?}", threat.severity));
+                                                let color = self.theme.severity_color(&format!(
+                                                    "{:?}",
+                                                    threat.severity
+                                                ));
                                                 ui.colored_label(
                                                     color,
                                                     format!("{:?}", threat.severity),
@@ -277,25 +290,23 @@ impl ResultsView {
                                             // Threat name
                                             ui.allocate_ui(Vec2::new(200.0, 25.0), |ui| {
                                                 if ui
-                                                    .selectable_label(is_selected, &threat.threat_name)
+                                                    .selectable_label(
+                                                        is_selected,
+                                                        &threat.threat_name,
+                                                    )
                                                     .clicked()
                                                 {
-                                                    self.selected_detection = if is_selected {
-                                                        None
-                                                    } else {
-                                                        Some(idx)
-                                                    };
+                                                    self.selected_detection =
+                                                        if is_selected { None } else { Some(idx) };
                                                 }
                                             });
 
                                             // Path
                                             ui.allocate_ui(Vec2::new(300.0, 25.0), |ui| {
                                                 ui.label(
-                                                    RichText::new(
-                                                        truncate_path(&threat.path, 40),
-                                                    )
-                                                    .monospace()
-                                                    .size(11.0),
+                                                    RichText::new(truncate_path(&threat.path, 40))
+                                                        .monospace()
+                                                        .size(11.0),
                                                 )
                                                 .on_hover_text(threat.path.display().to_string());
                                             });
@@ -398,10 +409,7 @@ impl ResultsView {
                     .color(self.theme.text_secondary),
             );
             ui.add_space(10.0);
-            ui.label(
-                self.theme
-                    .subheading("Run a scan to see results here."),
-            );
+            ui.label(self.theme.subheading("Run a scan to see results here."));
         });
     }
 }
