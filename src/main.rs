@@ -392,13 +392,25 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
 
             log::info!("Clearing quarantine...");
             let items = vault.list()?;
+            let total = items.len();
             let mut deleted = 0;
+            let mut failed = 0;
             for item in items {
-                if vault.delete(&item.id).is_ok() {
-                    deleted += 1;
+                match vault.delete(&item.id) {
+                    Ok(()) => deleted += 1,
+                    Err(e) => {
+                        log::error!("Failed to delete quarantine item {}: {}", item.id, e);
+                        failed += 1;
+                    }
                 }
             }
             println!("Deleted {} item(s) from quarantine.", deleted);
+            if failed > 0 {
+                println!(
+                    "Warning: {} of {} item(s) could not be deleted.",
+                    failed, total
+                );
+            }
         }
 
         QuarantineAction::Stats => {
@@ -1360,9 +1372,10 @@ fn run_browser(
                     println!("  Version: {}", ext.version);
 
                     if let Some(ref desc_text) = ext.description {
-                        // Truncate long descriptions
-                        let desc = if desc_text.len() > 60 {
-                            format!("{}...", &desc_text[..60])
+                        // Truncate long descriptions (char-aware to avoid UTF-8 panic)
+                        let desc: String = if desc_text.chars().count() > 60 {
+                            let truncated: String = desc_text.chars().take(60).collect();
+                            format!("{}...", truncated)
                         } else {
                             desc_text.clone()
                         };

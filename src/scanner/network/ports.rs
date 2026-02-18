@@ -394,15 +394,16 @@ impl SuspiciousPortDetector {
                 severity: known.severity,
             }
         } else {
-            // Unknown port - slightly suspicious if in ephemeral range
-            let _suspicious = port > 1024 && port < 49152;
+            // Unknown port - flag as suspicious if in the registered range
+            // (above well-known but below ephemeral/dynamic)
+            let suspicious = port > 1024 && port < 49152;
             PortInfo {
                 port,
                 category: PortCategory::Unknown,
                 service: None,
                 description: None,
-                suspicious: false, // Unknown ports aren't inherently suspicious
-                severity: 0,
+                suspicious,
+                severity: if suspicious { 10 } else { 0 },
             }
         }
     }

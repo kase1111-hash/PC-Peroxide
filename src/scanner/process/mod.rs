@@ -62,7 +62,7 @@ impl ProcessScanResult {
     /// Add a suspicious indicator.
     pub fn add_indicator(&mut self, indicator: SuspiciousIndicator) {
         self.score = self.score.saturating_add(indicator.severity);
-        self.suspicious = self.score > 30;
+        self.suspicious = self.score >= 30;
         self.indicators.push(indicator);
     }
 

@@ -181,10 +181,13 @@ impl QuarantineMetadata {
                 original_size: row.get::<_, i64>(4)? as u64,
                 detection_name: row.get(5)?,
                 category: row.get(6)?,
-                severity: row.get::<_, i32>(7)? as u8,
+                severity: row.get::<_, i32>(7)?.clamp(0, 100) as u8,
                 quarantine_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
                     .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                    .unwrap_or_else(|e| {
+                        log::warn!("Corrupt quarantine timestamp in DB, using epoch: {}", e);
+                        DateTime::<Utc>::from(std::time::UNIX_EPOCH)
+                    }),
                 restorable: row.get::<_, i32>(9)? != 0,
                 notes: row.get(10)?,
             })
@@ -214,10 +217,13 @@ impl QuarantineMetadata {
                 original_size: row.get::<_, i64>(4)? as u64,
                 detection_name: row.get(5)?,
                 category: row.get(6)?,
-                severity: row.get::<_, i32>(7)? as u8,
+                severity: row.get::<_, i32>(7)?.clamp(0, 100) as u8,
                 quarantine_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
                     .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                    .unwrap_or_else(|e| {
+                        log::warn!("Corrupt quarantine timestamp in DB, using epoch: {}", e);
+                        DateTime::<Utc>::from(std::time::UNIX_EPOCH)
+                    }),
                 restorable: row.get::<_, i32>(9)? != 0,
                 notes: row.get(10)?,
             })

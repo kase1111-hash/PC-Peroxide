@@ -176,7 +176,10 @@ impl WhitelistManager {
             let type_str: String = row.get(1)?;
             Ok(WhitelistEntry {
                 id: row.get(0)?,
-                whitelist_type: WhitelistType::from_db(&type_str).unwrap_or(WhitelistType::Hash),
+                whitelist_type: WhitelistType::from_db(&type_str).unwrap_or_else(|| {
+                    log::warn!("Unknown whitelist type '{}', skipping entry", type_str);
+                    WhitelistType::Hash
+                }),
                 pattern: row.get(2)?,
                 reason: row.get(3)?,
                 created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
@@ -319,45 +322,44 @@ impl WhitelistManager {
         Self::glob_match(&pattern_lower, &text_lower)
     }
 
-    /// Recursive glob matching implementation.
+    /// Iterative glob matching implementation using two-pointer / DP approach.
+    /// Avoids exponential backtracking from recursive wildcard expansion.
     fn glob_match(pattern: &str, text: &str) -> bool {
-        let mut p_chars = pattern.chars().peekable();
-        let mut t_chars = text.chars().peekable();
+        let p: Vec<char> = pattern.chars().collect();
+        let t: Vec<char> = text.chars().collect();
+        let (plen, tlen) = (p.len(), t.len());
 
-        while let Some(p) = p_chars.next() {
-            match p {
-                '*' => {
-                    // Match any sequence of characters
-                    let remaining_pattern: String = p_chars.collect();
-                    if remaining_pattern.is_empty() {
-                        return true;
-                    }
+        let mut pi = 0; // pattern index
+        let mut ti = 0; // text index
+        let mut star_pi: Option<usize> = None; // position of last '*' in pattern
+        let mut star_ti = 0; // text position when last '*' was encountered
 
-                    let remaining_text: String = t_chars.collect();
-                    for i in 0..=remaining_text.len() {
-                        if Self::glob_match(&remaining_pattern, &remaining_text[i..]) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-                '?' => {
-                    // Match any single character
-                    if t_chars.next().is_none() {
-                        return false;
-                    }
-                }
-                c => {
-                    // Match literal character
-                    if t_chars.next() != Some(c) {
-                        return false;
-                    }
-                }
+        while ti < tlen {
+            if pi < plen && (p[pi] == '?' || p[pi] == t[ti]) {
+                // Exact match or single-char wildcard
+                pi += 1;
+                ti += 1;
+            } else if pi < plen && p[pi] == '*' {
+                // Record star position and try matching zero chars first
+                star_pi = Some(pi);
+                star_ti = ti;
+                pi += 1;
+            } else if let Some(sp) = star_pi {
+                // Backtrack: let the last '*' match one more character
+                star_ti += 1;
+                ti = star_ti;
+                pi = sp + 1;
+            } else {
+                return false;
             }
         }
 
-        // Pattern consumed, check if text is also consumed
-        t_chars.next().is_none()
+        // Consume trailing '*' in pattern
+        while pi < plen && p[pi] == '*' {
+            pi += 1;
+        }
+
+        pi == plen
     }
 
     /// Simple wildcard pattern matching.

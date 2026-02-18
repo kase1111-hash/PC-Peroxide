@@ -87,12 +87,37 @@ impl LogConfig {
 
 /// Initialize the logging system.
 pub fn init_logging(config: LogConfig) -> Result<()> {
+    // Set up file logging first (if requested) so we can capture the writer
+    let file_writer: Option<std::sync::Mutex<File>> = if config.file {
+        if let Some(ref path) = config.file_path {
+            setup_file_logging(path)?;
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| {
+                    crate::core::error::Error::ConfigSave(format!(
+                        "Failed to open log file: {}",
+                        e
+                    ))
+                })?;
+            Some(std::sync::Mutex::new(file))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let file_writer = std::sync::Arc::new(file_writer);
+
     let mut builder = Builder::new();
 
     // Set the log level
     builder.filter_level(config.level);
 
     // Configure log format
+    let file_writer_clone = file_writer.clone();
     builder.format(move |buf, record| {
         let mut output = String::new();
 
@@ -101,7 +126,7 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
             output.push_str(&format!("{} ", Local::now().format("%Y-%m-%d %H:%M:%S")));
         }
 
-        // Level with color
+        // Level with color for console
         let level = record.level();
         let level_str = match level {
             log::Level::Error => "\x1b[31mERROR\x1b[0m",
@@ -122,24 +147,43 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
         // Message
         output.push_str(&format!("{}", record.args()));
 
+        // Also write to file if configured (without ANSI colors)
+        if let Some(ref file_mutex) = *file_writer_clone {
+            let level_plain = match level {
+                log::Level::Error => "ERROR",
+                log::Level::Warn => "WARN ",
+                log::Level::Info => "INFO ",
+                log::Level::Debug => "DEBUG",
+                log::Level::Trace => "TRACE",
+            };
+            let mut file_output = String::new();
+            if config.timestamps {
+                file_output
+                    .push_str(&format!("{} ", Local::now().format("%Y-%m-%d %H:%M:%S")));
+            }
+            file_output.push_str(&format!("[{}] ", level_plain));
+            if config.module_path {
+                if let Some(path) = record.module_path() {
+                    file_output.push_str(&format!("{}: ", path));
+                }
+            }
+            file_output.push_str(&format!("{}", record.args()));
+            if let Ok(mut f) = file_mutex.lock() {
+                let _ = writeln!(f, "{}", file_output);
+            }
+        }
+
         writeln!(buf, "{}", output)
     });
 
     // Initialize the logger
     builder.init();
 
-    // Set up file logging if requested
-    if config.file {
-        if let Some(path) = config.file_path {
-            setup_file_logging(&path)?;
-        }
-    }
-
     log::debug!("Logging initialized with level: {:?}", config.level);
     Ok(())
 }
 
-/// Set up file logging.
+/// Set up file logging by writing log entries to the specified file.
 fn setup_file_logging(path: &PathBuf) -> Result<()> {
     // Ensure directory exists
     if let Some(parent) = path.parent() {
@@ -148,10 +192,19 @@ fn setup_file_logging(path: &PathBuf) -> Result<()> {
         })?;
     }
 
-    // File logging is handled separately - for now just ensure the path is valid
-    // In a production app, we'd use a proper file logger like fern or log4rs
-    log::trace!("Log file path configured: {:?}", path);
+    // Validate the path is writable by opening in append mode
+    let _file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| {
+            crate::core::error::Error::ConfigSave(format!(
+                "Failed to open log file {:?}: {}",
+                path, e
+            ))
+        })?;
 
+    log::info!("File logging enabled: {:?}", path);
     Ok(())
 }
 

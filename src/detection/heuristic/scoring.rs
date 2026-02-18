@@ -56,7 +56,7 @@ pub fn is_trusted_path(path: &Path) -> bool {
     ];
 
     for prefix in trusted_prefixes {
-        if path_str.contains(prefix) {
+        if path_str.starts_with(prefix) {
             return true;
         }
     }
@@ -240,13 +240,14 @@ impl HeuristicScorer {
             total_score += packer_score;
         }
 
-        // Apply trust multiplier for files in trusted directories
-        let trust_multiplier = get_trust_multiplier(&result.path);
-        total_score *= trust_multiplier;
-
         // Apply diminishing returns for very high scores
         // This prevents small additional indicators from pushing score too high
         total_score = self.apply_diminishing_returns(total_score);
+
+        // Apply trust multiplier for files in trusted directories
+        // Applied after diminishing returns so trusted files still benefit from the ceiling
+        let trust_multiplier = get_trust_multiplier(&result.path);
+        total_score *= trust_multiplier;
 
         // Cap the score
         (total_score.round() as u8).min(self.score_cap)

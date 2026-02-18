@@ -228,11 +228,20 @@ impl EncryptionManager {
         let size_offset = VAULT_MAGIC.len() + 1;
         let mut size_bytes = [0u8; 8];
         size_bytes.copy_from_slice(&data[size_offset..size_offset + 8]);
-        let _original_size = u64::from_le_bytes(size_bytes);
+        let original_size = u64::from_le_bytes(size_bytes);
 
         // Decrypt the data
         let encrypted = &data[header_size..];
         let plaintext = self.decrypt(encrypted)?;
+
+        // Verify decrypted size matches header
+        if plaintext.len() as u64 != original_size {
+            return Err(Error::Decryption(format!(
+                "Decrypted size mismatch: expected {} bytes, got {} bytes",
+                original_size,
+                plaintext.len()
+            )));
+        }
 
         // Write decrypted file
         if let Some(parent) = dest.parent() {

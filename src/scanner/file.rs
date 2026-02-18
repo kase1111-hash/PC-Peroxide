@@ -506,12 +506,22 @@ impl FileScanner {
             let details = engine.scan_file_detailed(path)?;
             let detection = details.primary_detection(engine.heuristic_threshold());
 
-            // If no detection and it's an archive, scan contents
-            if detection.is_none()
-                && config.scan.scan_archives
-                && ArchiveScanner::is_supported_archive(path)
-            {
-                return Self::scan_archive_sync(path, engine, config);
+            // Also scan archive contents if enabled, even if the archive itself was detected
+            if config.scan.scan_archives && ArchiveScanner::is_supported_archive(path) {
+                if let Ok(Some(archive_detection)) =
+                    Self::scan_archive_sync(path, engine, config)
+                {
+                    // Prefer archive detection if it has higher severity, or if
+                    // the outer file had no detection
+                    match &detection {
+                        Some(outer) => {
+                            if archive_detection.severity > outer.severity {
+                                return Ok(Some(archive_detection));
+                            }
+                        }
+                        None => return Ok(Some(archive_detection)),
+                    }
+                }
             }
 
             return Ok(detection);
