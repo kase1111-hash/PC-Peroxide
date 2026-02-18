@@ -258,7 +258,10 @@ impl ArchiveScanner {
 
             // Extract content if it should be scanned
             if !is_dir && archived_file.should_scan() && uncompressed_size > 0 {
-                let mut content = Vec::with_capacity(uncompressed_size as usize);
+                let capacity = usize::try_from(uncompressed_size)
+                    .unwrap_or(usize::MAX)
+                    .min(self.max_extract_size as usize);
+                let mut content = Vec::with_capacity(capacity);
                 if entry.read_to_end(&mut content).is_ok() {
                     archived_file.content = Some(content);
                 }

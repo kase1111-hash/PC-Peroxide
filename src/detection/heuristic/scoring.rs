@@ -16,12 +16,29 @@ use std::path::{Path, PathBuf};
 pub fn is_trusted_path(path: &Path) -> bool {
     let path_str = path.to_string_lossy().to_lowercase();
 
-    // Windows trusted paths
-    let trusted_prefixes = [
-        // System directories
+    // Absolute path prefixes - must match from the start of the path
+    let absolute_prefixes = [
         "c:\\windows\\",
         "c:\\program files\\",
         "c:\\program files (x86)\\",
+        "/usr/bin/",
+        "/usr/lib/",
+        "/usr/local/",
+        "/opt/",
+        "/snap/",
+        "/var/lib/snapd/",
+    ];
+
+    for prefix in absolute_prefixes {
+        if path_str.starts_with(prefix) {
+            return true;
+        }
+    }
+
+    // Subpath patterns - matched as path components within the full path.
+    // These start with a path separator so they can only match at directory boundaries,
+    // preventing false matches on partial directory names.
+    let subpath_patterns = [
         // User application directories
         "\\appdata\\local\\programs\\",
         "\\appdata\\local\\microsoft\\",
@@ -46,17 +63,10 @@ pub fn is_trusted_path(path: &Path) -> bool {
         "\\unreal engine\\",
         "\\autodesk\\",
         "\\steam\\steamapps\\common\\",
-        // Linux trusted paths
-        "/usr/bin/",
-        "/usr/lib/",
-        "/usr/local/",
-        "/opt/",
-        "/snap/",
-        "/var/lib/snapd/",
     ];
 
-    for prefix in trusted_prefixes {
-        if path_str.starts_with(prefix) {
+    for pattern in subpath_patterns {
+        if path_str.contains(pattern) {
             return true;
         }
     }

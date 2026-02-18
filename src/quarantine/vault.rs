@@ -186,10 +186,12 @@ impl QuarantineVault {
         if delete_original {
             if let Err(e) = self.operations.secure_delete(path) {
                 log::error!("Failed to delete original file after quarantine: {}", e);
-                return QuarantineResult::failure(
+                return QuarantineResult::success_with_warning(
+                    id,
                     path.to_path_buf(),
+                    vault_path,
                     format!(
-                        "File was copied to vault but original could not be deleted: {}",
+                        "File quarantined but original could not be deleted: {}. Manual removal required.",
                         e
                     ),
                 );

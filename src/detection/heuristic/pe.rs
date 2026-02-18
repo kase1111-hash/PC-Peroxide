@@ -13,9 +13,6 @@ pub fn is_pe(data: &[u8]) -> bool {
         return false;
     }
     // Get PE header offset from DOS header
-    if data.len() < 64 {
-        return false;
-    }
     let pe_offset = u32::from_le_bytes([data[60], data[61], data[62], data[63]]) as usize;
     if pe_offset + 4 > data.len() {
         return false;

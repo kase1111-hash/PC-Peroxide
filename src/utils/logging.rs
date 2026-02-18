@@ -90,15 +90,23 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
     // Set up file logging first (if requested) so we can capture the writer
     let file_writer: Option<std::sync::Mutex<File>> = if config.file {
         if let Some(ref path) = config.file_path {
-            setup_file_logging(path)?;
+            // Ensure the log directory exists
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    crate::core::error::Error::ConfigSave(format!(
+                        "Failed to create log directory: {}",
+                        e
+                    ))
+                })?;
+            }
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(path)
                 .map_err(|e| {
                     crate::core::error::Error::ConfigSave(format!(
-                        "Failed to open log file: {}",
-                        e
+                        "Failed to open log file {:?}: {}",
+                        path, e
                     ))
                 })?;
             Some(std::sync::Mutex::new(file))
@@ -180,31 +188,6 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
     builder.init();
 
     log::debug!("Logging initialized with level: {:?}", config.level);
-    Ok(())
-}
-
-/// Set up file logging by writing log entries to the specified file.
-fn setup_file_logging(path: &PathBuf) -> Result<()> {
-    // Ensure directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            crate::core::error::Error::ConfigSave(format!("Failed to create log directory: {}", e))
-        })?;
-    }
-
-    // Validate the path is writable by opening in append mode
-    let _file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| {
-            crate::core::error::Error::ConfigSave(format!(
-                "Failed to open log file {:?}: {}",
-                path, e
-            ))
-        })?;
-
-    log::info!("File logging enabled: {:?}", path);
     Ok(())
 }
 
