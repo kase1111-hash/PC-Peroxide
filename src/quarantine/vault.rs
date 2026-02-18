@@ -185,8 +185,16 @@ impl QuarantineVault {
         // Delete original file if requested
         if delete_original {
             if let Err(e) = self.operations.secure_delete(path) {
-                // Log but don't fail the quarantine
-                log::warn!("Failed to delete original file: {}", e);
+                log::error!("Failed to delete original file after quarantine: {}", e);
+                return QuarantineResult::success_with_warning(
+                    id,
+                    path.to_path_buf(),
+                    vault_path,
+                    format!(
+                        "File quarantined but original could not be deleted: {}. Manual removal required.",
+                        e
+                    ),
+                );
             }
         }
 
@@ -238,12 +246,26 @@ impl QuarantineVault {
 
         // Remove from quarantine
         if let Err(e) = self.metadata.remove(id) {
-            log::warn!("Failed to remove metadata after restore: {}", e);
+            log::error!("Failed to remove metadata after restore: {}", e);
+            return RestoreResult::failure(
+                id.to_string(),
+                format!(
+                    "File restored to {:?} but metadata cleanup failed: {}",
+                    restore_path, e
+                ),
+            );
         }
 
         // Delete vault file
         if let Err(e) = fs::remove_file(&vault_path) {
-            log::warn!("Failed to delete vault file after restore: {}", e);
+            log::error!("Failed to delete vault file after restore: {}", e);
+            return RestoreResult::failure(
+                id.to_string(),
+                format!(
+                    "File restored to {:?} but vault file cleanup failed: {}",
+                    restore_path, e
+                ),
+            );
         }
 
         RestoreResult::success(id.to_string(), restore_path)

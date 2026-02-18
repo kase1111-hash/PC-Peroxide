@@ -42,22 +42,40 @@ impl ErrorMetrics {
 
         let category = error.category();
 
-        // Update category count
-        if let Ok(mut counts) = self.by_category.write() {
-            *counts.entry(category).or_insert(0) += 1;
+        // Update category count (recover from poisoned lock)
+        match self.by_category.write() {
+            Ok(mut counts) => {
+                *counts.entry(category).or_insert(0) += 1;
+            }
+            Err(poisoned) => {
+                log::error!("Error metrics category lock poisoned, recovering");
+                let mut counts = poisoned.into_inner();
+                *counts.entry(category).or_insert(0) += 1;
+            }
         }
 
-        // Store sample
-        if let Ok(mut recent) = self.recent_errors.write() {
-            if recent.len() >= self.max_recent {
-                recent.remove(0);
+        // Store sample (recover from poisoned lock)
+        let sample = ErrorSample {
+            message: error.to_string(),
+            category,
+            timestamp: std::time::Instant::now(),
+            suggestion: error.suggestion().map(String::from),
+        };
+        match self.recent_errors.write() {
+            Ok(mut recent) => {
+                if recent.len() >= self.max_recent {
+                    recent.remove(0);
+                }
+                recent.push(sample);
             }
-            recent.push(ErrorSample {
-                message: error.to_string(),
-                category,
-                timestamp: std::time::Instant::now(),
-                suggestion: error.suggestion().map(String::from),
-            });
+            Err(poisoned) => {
+                log::error!("Error metrics recent lock poisoned, recovering");
+                let mut recent = poisoned.into_inner();
+                if recent.len() >= self.max_recent {
+                    recent.remove(0);
+                }
+                recent.push(sample);
+            }
         }
     }
 

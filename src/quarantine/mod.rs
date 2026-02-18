@@ -84,6 +84,8 @@ pub struct QuarantineResult {
     pub success: bool,
     /// Error message if failed
     pub error: Option<String>,
+    /// Warning message (e.g., file quarantined but original could not be deleted)
+    pub warning: Option<String>,
 }
 
 impl QuarantineResult {
@@ -95,6 +97,7 @@ impl QuarantineResult {
             vault_path,
             success: true,
             error: None,
+            warning: None,
         }
     }
 
@@ -106,6 +109,24 @@ impl QuarantineResult {
             vault_path: PathBuf::new(),
             success: false,
             error: Some(error),
+            warning: None,
+        }
+    }
+
+    /// Create a successful result with a warning
+    pub fn success_with_warning(
+        id: String,
+        original_path: PathBuf,
+        vault_path: PathBuf,
+        warning: String,
+    ) -> Self {
+        Self {
+            id,
+            original_path,
+            vault_path,
+            success: true,
+            error: None,
+            warning: Some(warning),
         }
     }
 }

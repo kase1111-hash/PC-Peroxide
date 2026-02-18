@@ -443,8 +443,8 @@ impl ConnectionScanner {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut connections = Vec::new();
 
-        for line in stdout.lines().skip(4) {
-            // Skip header lines
+        for line in stdout.lines() {
+            // Skip header/blank lines by checking if the line starts with a protocol
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() < 4 {
                 continue;

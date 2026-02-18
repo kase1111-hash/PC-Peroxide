@@ -350,13 +350,16 @@ impl PackerDetector {
         let entry_rva = pe_info.entry_point;
 
         for section in &pe_info.sections {
-            let section_end_rva = section.virtual_address + section.virtual_size;
+            let section_end_rva = section.virtual_address.saturating_add(section.virtual_size);
             if entry_rva >= section.virtual_address && entry_rva < section_end_rva {
                 // Entry point is in this section
                 let offset_in_section = entry_rva - section.virtual_address;
-                let file_offset = section.raw_offset + offset_in_section;
+                let file_offset = match section.raw_offset.checked_add(offset_in_section) {
+                    Some(offset) => offset as usize,
+                    None => return false, // Overflow - crafted PE, skip
+                };
 
-                return self.match_at_offset(data, file_offset as usize, pattern);
+                return self.match_at_offset(data, file_offset, pattern);
             }
         }
 
