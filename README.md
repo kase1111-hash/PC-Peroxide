@@ -347,15 +347,18 @@ Firefox:  %APPDATA%\Mozilla\Firefox\Profiles\*\extensions
 ### 5.2 Quarantine System
 
 **Quarantine Vault Structure**
+
+The vault is per user (`quarantine.vault_path` in the config overrides it):
+`%LOCALAPPDATA%\PC-Peroxide\Quarantine` on Windows,
+`~/.local/share/pc-peroxide/quarantine` on Linux.
 ```
-%PROGRAMDATA%\MalwareRemover\Quarantine\
-├── vault.db                    # SQLite index
-├── items\
-│   ├── {guid1}.qvault         # Encrypted original
-│   ├── {guid2}.qvault
-│   └── ...
-└── metadata\
-    ├── {guid1}.json           # Original path, hash, detection info
+Quarantine\
+├── vault.db                    # SQLite index: original path, hash, detection info
+├── vault.key                   # AES-256-GCM key for this vault
+├── whitelist.db                # Files allowed by the user
+└── items\
+    ├── {guid1}.qvault         # Encrypted original
+    ├── {guid2}.qvault
     └── ...
 ```
 

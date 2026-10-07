@@ -32,21 +32,21 @@ pub const VAULT_EXTENSION: &str = "qvault";
 
 /// Get the default quarantine base path.
 ///
-/// On Windows: %PROGRAMDATA%\PC-Peroxide\Quarantine
+/// On Windows: %LOCALAPPDATA%\PC-Peroxide\Quarantine
 /// On Linux: ~/.local/share/pc-peroxide/quarantine
 /// On macOS: ~/Library/Application Support/PC-Peroxide/Quarantine
+///
+/// The vault is per user everywhere. A machine-wide vault (for example in
+/// %PROGRAMDATA%) would be owned by whichever account created it, often an
+/// elevated one, leaving it read-only for everyone else and its key readable
+/// by all users.
 pub fn get_quarantine_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        if let Some(program_data) = std::env::var_os("PROGRAMDATA") {
-            PathBuf::from(program_data)
-                .join(QUARANTINE_DIR)
-                .join(VAULT_DIR)
-        } else {
-            PathBuf::from("C:\\ProgramData")
-                .join(QUARANTINE_DIR)
-                .join(VAULT_DIR)
-        }
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("C:\\ProgramData"))
+            .join(QUARANTINE_DIR)
+            .join(VAULT_DIR)
     }
 
     #[cfg(target_os = "linux")]

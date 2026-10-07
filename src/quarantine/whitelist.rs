@@ -114,6 +114,14 @@ impl WhitelistManager {
         }
 
         let conn = Connection::open(db_path)?;
+        // SQLite quietly opens a file it cannot write read-only; refuse it
+        // now rather than fail on the first change.
+        if conn.is_readonly(rusqlite::DatabaseName::Main)? {
+            return Err(Error::Database(format!(
+                "{} is read-only for this account (it may have been created by another user or an elevated run)",
+                db_path.display()
+            )));
+        }
         let manager = Self { conn };
         manager.initialize()?;
         Ok(manager)

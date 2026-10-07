@@ -94,6 +94,14 @@ impl QuarantineMetadata {
         }
 
         let conn = Connection::open(db_path)?;
+        // SQLite quietly opens a file it cannot write read-only; refuse it
+        // now rather than fail on the first change.
+        if conn.is_readonly(rusqlite::DatabaseName::Main)? {
+            return Err(Error::Database(format!(
+                "{} is read-only for this account (it may have been created by another user or an elevated run); set quarantine.vault_path to a folder you can write to",
+                db_path.display()
+            )));
+        }
         let metadata = Self { conn };
         metadata.initialize()?;
         Ok(metadata)
@@ -545,5 +553,30 @@ mod tests {
     fn test_item_non_restorable() {
         let item = create_test_item("non-restorable").non_restorable();
         assert!(!item.restorable);
+    }
+
+    #[test]
+    fn test_read_only_database_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vault.db");
+        QuarantineMetadata::open(&db_path).unwrap();
+
+        let mut perms = std::fs::metadata(&db_path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&db_path, perms.clone()).unwrap();
+        // Root (or an administrator) can write regardless; nothing to test
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(&db_path)
+            .is_err()
+        {
+            let err = QuarantineMetadata::open(&db_path).err().expect("refused");
+            assert!(err.to_string().contains("read-only"), "{}", err);
+        }
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        std::fs::set_permissions(&db_path, perms).unwrap();
+        assert!(QuarantineMetadata::open(&db_path).is_ok());
     }
 }
