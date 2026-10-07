@@ -53,9 +53,21 @@ pub(crate) fn truncate_start(text: &str, max_chars: usize) -> String {
     format!("...{}", tail)
 }
 
+/// Formats `n` with the singular or plural form of a noun, e.g. "1 threat".
+pub(crate) fn count(n: u64, singular: &str, plural: &str) -> String {
+    format!("{} {}", n, if n == 1 { singular } else { plural })
+}
+
 #[cfg(all(test, feature = "gui"))]
 mod tests {
-    use super::truncate_start;
+    use super::{count, truncate_start};
+
+    #[test]
+    fn test_count() {
+        assert_eq!(count(0, "threat", "threats"), "0 threats");
+        assert_eq!(count(1, "threat", "threats"), "1 threat");
+        assert_eq!(count(2, "file", "files"), "2 files");
+    }
 
     #[test]
     fn test_truncate_start() {

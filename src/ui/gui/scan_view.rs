@@ -225,7 +225,7 @@ impl ScanView {
                         }
                         ui.label(
                             self.theme
-                                .label("Fast scan of common malware locations (~2 min)"),
+                                .label("Common malware locations: temp, downloads, startup"),
                         );
                         ui.add_space(10.0);
 
@@ -239,7 +239,7 @@ impl ScanView {
                         }
                         ui.label(
                             self.theme
-                                .label("Comprehensive scan of entire system (~30 min)"),
+                                .label("Every drive; can take hours on large disks"),
                         );
                         ui.add_space(10.0);
 

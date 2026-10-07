@@ -143,7 +143,8 @@ impl DashboardView {
                                 .text(format!("{:.0}%", scan_state.progress * 100.0)),
                             None => egui::ProgressBar::new(0.0).text("Discovering files..."),
                         };
-                        ui.add(bar.animate(true));
+                        // A bar takes all available width; keep it inside the card
+                        ui.add(bar.desired_width(200.0).animate(true));
                     }
                 });
             });
@@ -167,7 +168,11 @@ impl DashboardView {
                     ui.add_space(10.0);
 
                     ui.label(self.theme.large_value(&count.to_string()));
-                    ui.label(self.theme.subheading("items quarantined"));
+                    ui.label(self.theme.subheading(if count == 1 {
+                        "item quarantined"
+                    } else {
+                        "items quarantined"
+                    }));
 
                     ui.add_space(10.0);
 
@@ -225,10 +230,10 @@ impl DashboardView {
                         }));
 
                         ui.add_space(5.0);
-                        ui.label(
-                            self.theme
-                                .label(&format!("{} files scanned", summary.files_scanned)),
-                        );
+                        ui.label(self.theme.label(&format!(
+                            "{} scanned",
+                            super::count(summary.files_scanned, "file", "files")
+                        )));
 
                         if ui.small_button("View Details").clicked() {
                             action = Some(DashboardAction::ViewResults);
@@ -293,16 +298,23 @@ impl DashboardView {
 
     /// Render drop zone hint.
     fn render_drop_zone(&self, ui: &mut Ui) {
+        // Highlight while files are dragged over the window
+        let hovering = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+        let (stroke_color, text) = if hovering {
+            (self.theme.primary, "Release to scan")
+        } else {
+            (self.theme.border, "Drop files or folders here to scan")
+        };
         egui::Frame::none()
             .fill(Color32::TRANSPARENT)
-            .stroke(egui::Stroke::new(2.0_f32, self.theme.border))
+            .stroke(egui::Stroke::new(2.0_f32, stroke_color))
             .rounding(Rounding::same(8.0))
             .inner_margin(30.0)
             .show(ui, |ui| {
                 ui.set_min_width(400.0);
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        RichText::new("Drop files or folders here to scan")
+                        RichText::new(text)
                             .size(14.0)
                             .color(self.theme.text_secondary),
                     );

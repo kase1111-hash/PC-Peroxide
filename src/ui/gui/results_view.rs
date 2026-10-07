@@ -45,6 +45,7 @@ impl ResultsView {
         summary: Option<&ScanSummary>,
         threats: &[Detection],
         quarantined: &HashSet<PathBuf>,
+        allowed: &HashSet<PathBuf>,
         busy: bool,
     ) -> Option<ResultsAction> {
         let mut action = None;
@@ -78,7 +79,7 @@ impl ResultsView {
                         ui.add_space(20.0);
                         let partial = summary.status == ScanStatus::Cancelled;
                         if let Some(a) =
-                            self.render_detections(ui, threats, quarantined, busy, partial)
+                            self.render_detections(ui, threats, quarantined, allowed, busy, partial)
                         {
                             action = Some(a);
                         }
@@ -171,6 +172,7 @@ impl ResultsView {
         ui: &mut Ui,
         threats: &[Detection],
         quarantined: &HashSet<PathBuf>,
+        allowed: &HashSet<PathBuf>,
         busy: bool,
         partial: bool,
     ) -> Option<ResultsAction> {
@@ -332,18 +334,38 @@ impl ResultsView {
 
                                             if quarantined.contains(&threat.path) {
                                                 ui.colored_label(self.theme.success, "Quarantined");
-                                            } else if ui
-                                                .add_enabled(
-                                                    !busy,
-                                                    egui::Button::new("Quarantine").small(),
-                                                )
-                                                .on_hover_text(
-                                                    "Move this file into the encrypted quarantine vault",
-                                                )
-                                                .clicked()
-                                            {
-                                                action =
-                                                    Some(ResultsAction::Quarantine(threat.clone()));
+                                            } else if allowed.contains(&threat.path) {
+                                                ui.colored_label(self.theme.text_secondary, "Allowed");
+                                            } else {
+                                                ui.horizontal(|ui| {
+                                                    if ui
+                                                        .add_enabled(
+                                                            !busy,
+                                                            egui::Button::new("Quarantine").small(),
+                                                        )
+                                                        .on_hover_text(
+                                                            "Move this file into the encrypted quarantine vault",
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        action = Some(ResultsAction::Quarantine(
+                                                            threat.clone(),
+                                                        ));
+                                                    }
+                                                    if ui
+                                                        .add_enabled(
+                                                            !busy,
+                                                            egui::Button::new("Allow").small(),
+                                                        )
+                                                        .on_hover_text(
+                                                            "Not a threat: leave the file and stop reporting it",
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        action =
+                                                            Some(ResultsAction::Allow(threat.clone()));
+                                                    }
+                                                });
                                             }
                                             ui.end_row();
                                         }
@@ -417,7 +439,7 @@ impl ResultsView {
                         }
 
                         ui.label(self.theme.label("Detection Method:"));
-                        ui.label(format!("{:?}", threat.method));
+                        ui.label(threat.method.to_string());
                         ui.end_row();
 
                         ui.label(self.theme.label("Score:"));

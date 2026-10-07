@@ -15,6 +15,7 @@ use crate::core::error::Error;
 use crate::core::types::{Detection, DetectionMethod, ScanStatus, ScanSummary, ScanType, Severity};
 use crate::quarantine::{QuarantineItem, QuarantineVault, WhitelistEntry, WhitelistManager};
 use crate::scanner::{BackgroundScan, FileScanner, ScanRequest, ScanResultStore};
+use crate::utils::hash::HashCalculator;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -82,6 +83,8 @@ struct Notice {
 /// and secure deletion can take seconds.
 enum VaultOp {
     Quarantine(Detection),
+    /// Whitelist a detected file (a false positive) without touching it
+    Allow(Detection),
     /// Critical detections quarantined automatically after a scan
     AutoQuarantine(Vec<Detection>),
     /// Restore an item; `allow` also whitelists its hash so it is not
@@ -101,6 +104,8 @@ struct VaultOpOutcome {
     is_error: bool,
     /// Paths that were moved into quarantine.
     quarantined: Vec<PathBuf>,
+    /// Path that was whitelisted, if any.
+    allowed: Option<PathBuf>,
 }
 
 /// Main application struct.
@@ -130,6 +135,8 @@ pub struct PeroxideApp {
     /// Detected files that are now in the vault (derived from the vault, so
     /// it survives restarts)
     quarantined_paths: HashSet<PathBuf>,
+    /// Detected files whitelisted from the current results
+    allowed_paths: HashSet<PathBuf>,
     /// Message shown in the top bar
     notice: Option<Notice>,
     /// Signature database status and import
@@ -180,6 +187,7 @@ impl PeroxideApp {
             close_when_idle: false,
             queued_vault_ops: VecDeque::new(),
             quarantined_paths: HashSet::new(),
+            allowed_paths: HashSet::new(),
             notice: None,
             updater: SignatureUpdater::new(),
             dashboard: DashboardView::new(theme.clone()),
@@ -406,11 +414,15 @@ impl PeroxideApp {
                         self.scan_state.last_scan.as_ref(),
                         &self.scan_state.threats_found,
                         &self.quarantined_paths,
+                        &self.allowed_paths,
                         self.vault_task.is_some(),
                     ) {
                         match action {
                             ResultsAction::Quarantine(detection) => {
                                 self.run_vault_op(VaultOp::Quarantine(detection));
+                            }
+                            ResultsAction::Allow(detection) => {
+                                self.run_vault_op(VaultOp::Allow(detection));
                             }
                             ResultsAction::Export(format) => {
                                 self.export_results(format);
@@ -606,16 +618,19 @@ impl PeroxideApp {
             Ok(summary) => {
                 state.status = match summary.status {
                     ScanStatus::Cancelled => format!(
-                        "Scan cancelled after {} files ({} threats found)",
-                        summary.files_scanned, summary.threats_found
+                        "Scan cancelled after {} ({} found)",
+                        super::count(summary.files_scanned, "file", "files"),
+                        super::count(summary.threats_found.into(), "threat", "threats")
                     ),
                     _ => format!(
-                        "Scan complete: {} files scanned, {} threats found",
-                        summary.files_scanned, summary.threats_found
+                        "Scan complete: {} scanned, {} found",
+                        super::count(summary.files_scanned, "file", "files"),
+                        super::count(summary.threats_found.into(), "threat", "threats")
                     ),
                 };
                 log::info!("{}", state.status);
                 state.threats_found = summary.detections.clone();
+                self.allowed_paths.clear();
                 self.quarantined_paths =
                     quarantined_among(&state.threats_found, &self.quarantine_items);
                 // Only exact signature matches are certain enough to act on
@@ -683,11 +698,13 @@ impl PeroxideApp {
                 message: "Quarantine operation failed unexpectedly".to_string(),
                 is_error: true,
                 quarantined: Vec::new(),
+                allowed: None,
             },
         };
         self.vault_task = None;
 
         self.quarantined_paths.extend(outcome.quarantined);
+        self.allowed_paths.extend(outcome.allowed);
         if outcome.is_error {
             log::error!("{}", outcome.message);
         } else {
@@ -889,11 +906,38 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
         message,
         is_error: true,
         quarantined: Vec::new(),
+        allowed: None,
     };
     let done = |message: String| VaultOpOutcome {
         message,
         is_error: false,
         quarantined: Vec::new(),
+        allowed: None,
+    };
+
+    // Whitelisting does not need the vault
+    let op = match op {
+        VaultOp::Allow(detection) => {
+            return match HashCalculator::sha256_file(&detection.path)
+                .and_then(|hash| allow_hash(&hash, "Allowed from scan results"))
+            {
+                Ok(()) => VaultOpOutcome {
+                    message: format!(
+                        "Allowed {}; it will not be reported again",
+                        detection.path.display()
+                    ),
+                    is_error: false,
+                    quarantined: Vec::new(),
+                    allowed: Some(detection.path),
+                },
+                Err(e) => fail(format!(
+                    "Failed to allow {}: {}",
+                    detection.path.display(),
+                    e
+                )),
+            };
+        }
+        other => other,
     };
 
     let vault = match QuarantineVault::open(&config.quarantine.quarantine_dir()) {
@@ -902,6 +946,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
     };
 
     match op {
+        VaultOp::Allow(_) => unreachable!("whitelisting is handled before the vault is opened"),
         VaultOp::Quarantine(detection) => {
             let rechecker = match Rechecker::new(Arc::clone(&config)) {
                 Ok(rechecker) => rechecker,
@@ -912,6 +957,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
                     message: format!("Quarantined {}", detection.path.display()),
                     is_error: false,
                     quarantined: vec![detection.path],
+                    allowed: None,
                 },
                 Err(message) => fail(message),
             }
@@ -953,6 +999,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
                 },
                 is_error: !errors.is_empty(),
                 quarantined,
+                allowed: None,
             }
         }
         VaultOp::Restore { id, allow } => {
@@ -962,7 +1009,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
                 let restored = result.restored_path.display().to_string();
                 match (allow, hash) {
                     (false, _) => done(format!("Restored {}", restored)),
-                    (true, Some(hash)) => match allow_hash(&hash) {
+                    (true, Some(hash)) => match allow_hash(&hash, "Restored from quarantine") {
                         Ok(()) => done(format!(
                             "Restored {} and added it to the whitelist",
                             restored
@@ -1002,10 +1049,13 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
                 })
                 .count();
             if failed == 0 {
-                done(format!("Deleted {} quarantined item(s)", total))
+                done(format!(
+                    "Deleted {}",
+                    super::count(total as u64, "quarantined item", "quarantined items")
+                ))
             } else {
                 fail(format!(
-                    "Deleted {} of {} quarantined item(s); {} failed",
+                    "Deleted {} of {} quarantined items; {} failed",
                     total - failed,
                     total,
                     failed
@@ -1016,7 +1066,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
 }
 
 /// Whitelist a file hash so the file is not flagged again.
-fn allow_hash(hash: &str) -> crate::core::error::Result<()> {
+fn allow_hash(hash: &str, reason: &str) -> crate::core::error::Result<()> {
     let whitelist = WhitelistManager::open(&WhitelistManager::default_path())?;
     if whitelist.is_hash_whitelisted(hash)? {
         return Ok(());
@@ -1024,7 +1074,7 @@ fn allow_hash(hash: &str) -> crate::core::error::Result<()> {
     whitelist.add(&WhitelistEntry::by_hash(
         uuid::Uuid::new_v4().to_string(),
         hash.to_string(),
-        "Restored from quarantine".to_string(),
+        reason.to_string(),
     ))
 }
 
@@ -1046,6 +1096,7 @@ pub enum ScanAction {
 /// Actions from results view.
 pub enum ResultsAction {
     Quarantine(Detection),
+    Allow(Detection),
     Export(ExportFormat),
 }
 

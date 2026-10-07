@@ -45,7 +45,8 @@ fn main() -> Result<(), eframe::Error> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("PC-Peroxide - Malware Scanner")
             .with_inner_size([1200.0, 800.0])
-            .with_min_inner_size([800.0, 600.0])
+            // Below this the dashboard and results card rows are cut off
+            .with_min_inner_size([1024.0, 680.0])
             .with_drag_and_drop(true),
         default_theme: eframe::Theme::Dark,
         follow_system_theme: false,
