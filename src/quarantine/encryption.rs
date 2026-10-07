@@ -189,9 +189,11 @@ impl EncryptionManager {
         file.write_all(&original_size.to_le_bytes())
             .map_err(|e| Error::file_write(dest, e))?;
 
-        // Write encrypted data
+        // Write encrypted data, and make sure it is on disk before the
+        // caller destroys the original
         file.write_all(&encrypted)
             .map_err(|e| Error::file_write(dest, e))?;
+        file.sync_all().map_err(|e| Error::file_write(dest, e))?;
 
         Ok(())
     }
@@ -251,7 +253,16 @@ impl EncryptionManager {
             })?;
         }
 
-        fs::write(dest, &plaintext).map_err(|e| Error::file_write(dest, e))?;
+        // create_new never overwrites an existing file and never follows a
+        // symlink planted at the destination
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dest)
+            .map_err(|e| Error::file_write(dest, e))?;
+        file.write_all(&plaintext)
+            .map_err(|e| Error::file_write(dest, e))?;
+        file.sync_all().map_err(|e| Error::file_write(dest, e))?;
 
         Ok(())
     }

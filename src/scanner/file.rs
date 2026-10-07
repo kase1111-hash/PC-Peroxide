@@ -53,6 +53,9 @@ pub struct FileScanner {
     cancelled: Arc<AtomicBool>,
     progress: Arc<ProgressTracker>,
     whitelist_path: PathBuf,
+    /// The quarantine vault, never scanned (its files are encrypted
+    /// malware and could match patterns)
+    vault_dir: PathBuf,
     detection_callback: Option<DetectionCallback>,
 }
 
@@ -80,6 +83,7 @@ impl FileScanner {
         };
 
         Self {
+            vault_dir: config.quarantine.quarantine_dir(),
             config,
             detection_engine,
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -92,6 +96,7 @@ impl FileScanner {
     /// Create a scanner with a specific detection engine.
     pub fn with_detection_engine(config: Arc<Config>, engine: DetectionEngine) -> Self {
         Self {
+            vault_dir: config.quarantine.quarantine_dir(),
             config,
             detection_engine: Some(Arc::new(engine)),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -287,6 +292,10 @@ impl FileScanner {
 
     /// Check if a path should be excluded from scanning.
     pub fn should_exclude(&self, path: &Path) -> bool {
+        if path.starts_with(&self.vault_dir) {
+            return true;
+        }
+
         // Check excluded paths
         for excluded in &self.config.scan.exclude_paths {
             if Self::path_matches_exclusion(path, excluded) {
@@ -631,6 +640,12 @@ impl FileScanner {
                 continue;
             }
 
+            // is_file() follows links, so a symlinked file would be scanned
+            // (and reported under the link's path) despite the setting.
+            if !self.config.scan.follow_symlinks && entry.path_is_symlink() {
+                continue;
+            }
+
             if !file_path.is_file() {
                 continue;
             }
@@ -935,6 +950,38 @@ mod tests {
 
         assert_eq!(summary.threats_found, 1);
         assert_eq!(summary.files_scanned, 1);
+    }
+
+    #[tokio::test]
+    async fn test_vault_and_symlinks_are_not_scanned() {
+        let state = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let vault = target.path().join("vault");
+        std::fs::create_dir(&vault).unwrap();
+        std::fs::write(vault.join("item.qvault"), EICAR).unwrap();
+        std::fs::write(target.path().join("eicar.com"), EICAR).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            target.path().join("eicar.com"),
+            target.path().join("link.com"),
+        )
+        .unwrap();
+
+        let mut config = Config::default();
+        config.quarantine.vault_path = Some(vault);
+        let db = SignatureDatabase::open(&state.path().join("sigs.db")).unwrap();
+        let scanner = FileScanner::with_detection_engine(
+            Arc::new(config),
+            DetectionEngine::new(Arc::new(db)),
+        )
+        .with_whitelist_path(state.path().join("whitelist.db"));
+
+        let summary = scanner
+            .custom_scan(vec![target.path().to_path_buf()])
+            .await
+            .unwrap();
+        assert_eq!(summary.threats_found, 1);
+        assert_eq!(summary.detections[0].path, target.path().join("eicar.com"));
     }
 
     #[test]

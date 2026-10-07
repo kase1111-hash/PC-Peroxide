@@ -101,6 +101,13 @@ impl QuarantineVault {
                 "File does not exist".to_string(),
             );
         }
+        // Removing a link would leave the file it points to in place.
+        if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+            return QuarantineResult::failure(
+                path.to_path_buf(),
+                "Path is a symbolic link; quarantine the file it points to instead".to_string(),
+            );
+        }
 
         // Calculate hash
         let hash = match self.calculate_hash(path) {
@@ -113,9 +120,15 @@ impl QuarantineVault {
             }
         };
 
-        // Check if this file is already quarantined. Identical copies at
-        // other paths (malware often copies itself) must still be handled.
-        match self.metadata.exists_by_hash_and_path(&hash, path) {
+        // When the original is kept, quarantining the same file again would
+        // only add a duplicate item. When it is removed, a matching item means
+        // the file was dropped again (e.g. by persistence) and must be handled.
+        let duplicate = if delete_original {
+            Ok(false)
+        } else {
+            self.metadata.exists_by_hash_and_path(&hash, path)
+        };
+        match duplicate {
             Ok(true) => {
                 return QuarantineResult::failure(
                     path.to_path_buf(),
@@ -240,8 +253,9 @@ impl QuarantineVault {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| item.original_path.clone());
 
-        // Never overwrite a file that has since appeared at the destination
-        if restore_path.exists() {
+        // Never overwrite a file (or follow a link) that has since appeared at
+        // the destination
+        if fs::symlink_metadata(&restore_path).is_ok() {
             return RestoreResult::failure(
                 id.to_string(),
                 format!(
@@ -501,6 +515,52 @@ mod tests {
         assert!(result2.success, "{:?}", result2.error);
         assert!(!file2.exists());
         assert_eq!(vault.count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_quarantine_redropped_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        let file_path = create_test_file(&files_dir, "svc.exe", b"payload");
+        assert!(
+            vault
+                .quarantine(&file_path, "T", "trojan", 100, true)
+                .success
+        );
+
+        // Persistence writes the identical file back to the same path
+        create_test_file(&files_dir, "svc.exe", b"payload");
+        let again = vault.quarantine(&file_path, "T", "trojan", 100, true);
+        assert!(again.success, "{:?}", again.error);
+        assert!(!file_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlinks_are_not_followed() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        // Quarantining a link is refused and leaves its target intact
+        let target = create_test_file(&files_dir, "tool", b"legitimate tool");
+        let link = files_dir.join("tool-link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(!vault.quarantine(&link, "T", "trojan", 100, true).success);
+        assert_eq!(fs::read(&target).unwrap(), b"legitimate tool");
+
+        // Restore refuses a dangling link planted at the original path
+        let original = create_test_file(&files_dir, "job.sh", b"quarantined");
+        let result = vault.quarantine(&original, "T", "trojan", 100, true);
+        assert!(result.success);
+        let elsewhere = temp_dir.path().join("elsewhere");
+        std::os::unix::fs::symlink(&elsewhere, &original).unwrap();
+        assert!(!vault.restore(&result.id).success);
+        assert!(!elsewhere.exists());
     }
 
     #[test]

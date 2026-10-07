@@ -13,6 +13,20 @@ use std::path::Path;
 
 use crate::core::error::{Error, Result};
 
+/// Whether other directory entries share this file's data (hard links).
+#[cfg(unix)]
+fn has_other_links(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    metadata.nlink() > 1
+}
+
+/// Whether other directory entries share this file's data (hard links).
+#[cfg(not(unix))]
+fn has_other_links(_metadata: &fs::Metadata) -> bool {
+    // The link count is not available on stable Rust for Windows.
+    false
+}
+
 /// Number of overwrite passes for secure deletion.
 const SECURE_DELETE_PASSES: usize = 3;
 
@@ -45,12 +59,22 @@ impl SecureOperations {
     /// 3. Renames the file to a random name
     /// 4. Deletes the renamed file
     pub fn secure_delete(&self, path: &Path) -> Result<()> {
-        if !path.exists() {
-            return Ok(()); // Already deleted
+        // symlink_metadata does not follow links
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(m) => m,
+            Err(_) => return Ok(()), // Already deleted
+        };
+
+        // Overwriting a symlink would destroy its target, and overwriting a
+        // hard link would destroy the data of every other name for it; only
+        // remove this name.
+        if metadata.file_type().is_symlink() || has_other_links(&metadata) {
+            return fs::remove_file(path).map_err(|e| Error::FileDelete {
+                path: path.to_path_buf(),
+                source: e,
+            });
         }
 
-        // Get file size
-        let metadata = fs::metadata(path).map_err(|e| Error::file_read(path, e))?;
         let file_size = metadata.len() as usize;
 
         if file_size > 0 {
@@ -371,6 +395,29 @@ mod tests {
         ops.secure_delete(&file_path).unwrap();
 
         assert!(!file_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_secure_delete_keeps_shared_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let ops = SecureOperations::new();
+
+        // A symlink: only the link goes, the target is untouched
+        let target = temp_dir.path().join("target.txt");
+        fs::write(&target, b"target data").unwrap();
+        let link = temp_dir.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        ops.secure_delete(&link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"target data");
+
+        // A hard link: the other name keeps its data
+        let hard = temp_dir.path().join("hard");
+        fs::hard_link(&target, &hard).unwrap();
+        ops.secure_delete(&hard).unwrap();
+        assert!(!hard.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"target data");
     }
 
     #[test]
