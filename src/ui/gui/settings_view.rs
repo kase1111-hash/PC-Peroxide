@@ -258,7 +258,7 @@ impl SettingsView {
             if ui
                 .checkbox(
                     &mut this.edited.auto_quarantine_critical,
-                    "Automatically quarantine critical threats after a scan",
+                    "Automatically quarantine critical signature matches after a scan",
                 )
                 .changed()
             {

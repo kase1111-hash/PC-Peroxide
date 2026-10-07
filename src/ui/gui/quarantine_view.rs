@@ -457,7 +457,23 @@ impl QuarantineView {
                                 .add_enabled(!self.busy, egui::Button::new("Restore"))
                                 .clicked()
                             {
-                                action = Some(QuarantineAction::Restore(pending.id.clone()));
+                                action = Some(QuarantineAction::Restore {
+                                    id: pending.id.clone(),
+                                    allow: false,
+                                });
+                                self.confirm_restore = None;
+                            }
+                            if ui
+                                .add_enabled(!self.busy, egui::Button::new("Restore and allow"))
+                                .on_hover_text(
+                                    "Also whitelist this file so future scans do not flag it",
+                                )
+                                .clicked()
+                            {
+                                action = Some(QuarantineAction::Restore {
+                                    id: pending.id.clone(),
+                                    allow: true,
+                                });
                                 self.confirm_restore = None;
                             }
                         });

@@ -12,8 +12,8 @@ use super::updates::SignatureUpdater;
 use super::View;
 use crate::core::config::Config;
 use crate::core::error::Error;
-use crate::core::types::{Detection, ScanStatus, ScanSummary, ScanType, Severity};
-use crate::quarantine::{QuarantineItem, QuarantineVault};
+use crate::core::types::{Detection, DetectionMethod, ScanStatus, ScanSummary, ScanType, Severity};
+use crate::quarantine::{QuarantineItem, QuarantineVault, WhitelistEntry, WhitelistManager};
 use crate::scanner::{BackgroundScan, FileScanner, ScanRequest, ScanResultStore};
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -84,7 +84,12 @@ enum VaultOp {
     Quarantine(Detection),
     /// Critical detections quarantined automatically after a scan
     AutoQuarantine(Vec<Detection>),
-    Restore(String),
+    /// Restore an item; `allow` also whitelists its hash so it is not
+    /// flagged again
+    Restore {
+        id: String,
+        allow: bool,
+    },
     Delete(String),
     /// Delete these items (the ones the user confirmed)
     DeleteAll(Vec<String>),
@@ -421,8 +426,8 @@ impl PeroxideApp {
                         self.vault_task.is_some(),
                     ) {
                         match action {
-                            QuarantineAction::Restore(id) => {
-                                self.run_vault_op(VaultOp::Restore(id));
+                            QuarantineAction::Restore { id, allow } => {
+                                self.run_vault_op(VaultOp::Restore { id, allow });
                             }
                             QuarantineAction::Delete(id) => {
                                 self.run_vault_op(VaultOp::Delete(id));
@@ -611,12 +616,15 @@ impl PeroxideApp {
                 };
                 log::info!("{}", state.status);
                 state.threats_found = summary.detections.clone();
-                // Skip files the user already quarantined during the scan
+                // Only exact signature matches are certain enough to act on
+                // unattended; pattern and heuristic matches are left for the
+                // user. Skip files already quarantined during the scan.
                 let critical: Vec<Detection> = summary
                     .detections
                     .iter()
                     .filter(|d| {
                         d.severity == Severity::Critical
+                            && d.method == DetectionMethod::Signature
                             && !self.quarantined_paths.contains(&d.path)
                     })
                     .cloned()
@@ -648,12 +656,12 @@ impl PeroxideApp {
             return;
         }
 
-        let vault_dir = self.config.quarantine.quarantine_dir();
+        let config = Arc::clone(&self.config);
         let (tx, rx) = mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("quarantine-op".to_string())
             .spawn(move || {
-                let _ = tx.send(perform_vault_op(&vault_dir, op));
+                let _ = tx.send(perform_vault_op(config, op));
             });
         match spawned {
             Ok(_) => self.vault_task = Some(rx),
@@ -793,11 +801,54 @@ fn load_last_scan() -> Option<ScanSummary> {
     store.load_scan(&latest.scan_id).ok().flatten()
 }
 
-/// Move a detected file into the vault.
+/// Re-checks detections before anything is quarantined, so a file that was
+/// replaced or whitelisted since the scan is never moved by mistake.
+struct Rechecker {
+    scanner: FileScanner,
+    runtime: tokio::runtime::Runtime,
+}
+
+impl Rechecker {
+    fn new(config: Arc<Config>) -> Result<Self, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map_err(|e| format!("Cannot start re-check: {}", e))?;
+        Ok(Self {
+            scanner: FileScanner::new(config),
+            runtime,
+        })
+    }
+
+    /// Ok if the file still triggers the same detection.
+    fn check(&self, detection: &Detection) -> Result<(), String> {
+        match self
+            .runtime
+            .block_on(self.scanner.scan_file(&detection.path))
+        {
+            Ok(Some(current)) if current.threat_name == detection.threat_name => Ok(()),
+            Ok(_) => Err(format!(
+                "{} no longer matches {} (changed or whitelisted since the scan); not quarantined",
+                detection.path.display(),
+                detection.threat_name
+            )),
+            Err(e) => Err(format!(
+                "Cannot re-check {}: {}",
+                detection.path.display(),
+                e
+            )),
+        }
+    }
+}
+
+/// Move a detected file into the vault after re-checking it. A file that
+/// was copied into the vault but could not be removed (e.g. locked by a
+/// running process) counts as a failure: the threat is still on disk.
 fn quarantine_detection(
     vault: &QuarantineVault,
+    rechecker: &Rechecker,
     detection: &Detection,
-) -> Result<Option<String>, String> {
+) -> Result<(), String> {
+    rechecker.check(detection)?;
     let result = vault.quarantine(
         &detection.path,
         &detection.threat_name,
@@ -805,19 +856,25 @@ fn quarantine_detection(
         detection.severity.score(),
         true,
     );
-    if result.success {
-        Ok(result.warning)
-    } else {
-        Err(format!(
+    if !result.success {
+        return Err(format!(
             "Failed to quarantine {}: {}",
             detection.path.display(),
             result.error.unwrap_or_else(|| "unknown error".to_string())
-        ))
+        ));
+    }
+    match result.warning {
+        Some(warning) => Err(format!(
+            "{} was copied to quarantine but is still on disk: {}",
+            detection.path.display(),
+            warning
+        )),
+        None => Ok(()),
     }
 }
 
-/// Run a vault operation against the vault in `vault_dir`.
-fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome {
+/// Run a vault operation against the configured vault.
+fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
     let fail = |message: String| VaultOpOutcome {
         message,
         is_error: true,
@@ -829,28 +886,31 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
         quarantined: Vec::new(),
     };
 
-    let vault = match QuarantineVault::open(vault_dir) {
+    let vault = match QuarantineVault::open(&config.quarantine.quarantine_dir()) {
         Ok(vault) => vault,
         Err(e) => return fail(format!("Cannot open quarantine vault: {}", e)),
     };
 
     match op {
-        VaultOp::Quarantine(detection) => match quarantine_detection(&vault, &detection) {
-            Ok(warning) => VaultOpOutcome {
-                message: match warning {
-                    Some(warning) => format!(
-                        "Quarantined {} with a warning: {}",
-                        detection.path.display(),
-                        warning
-                    ),
-                    None => format!("Quarantined {}", detection.path.display()),
+        VaultOp::Quarantine(detection) => {
+            let rechecker = match Rechecker::new(Arc::clone(&config)) {
+                Ok(rechecker) => rechecker,
+                Err(message) => return fail(message),
+            };
+            match quarantine_detection(&vault, &rechecker, &detection) {
+                Ok(()) => VaultOpOutcome {
+                    message: format!("Quarantined {}", detection.path.display()),
+                    is_error: false,
+                    quarantined: vec![detection.path],
                 },
-                is_error: false,
-                quarantined: vec![detection.path],
-            },
-            Err(message) => fail(message),
-        },
+                Err(message) => fail(message),
+            }
+        }
         VaultOp::AutoQuarantine(detections) => {
+            let rechecker = match Rechecker::new(Arc::clone(&config)) {
+                Ok(rechecker) => rechecker,
+                Err(message) => return fail(message),
+            };
             let total = detections.len();
             let mut quarantined = Vec::new();
             let mut errors = Vec::new();
@@ -859,8 +919,8 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
                 if !detection.path.exists() {
                     continue;
                 }
-                match quarantine_detection(&vault, &detection) {
-                    Ok(_) => quarantined.push(detection.path),
+                match quarantine_detection(&vault, &rechecker, &detection) {
+                    Ok(()) => quarantined.push(detection.path),
                     Err(message) => {
                         log::error!("{}", message);
                         errors.push(message);
@@ -885,10 +945,28 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
                 quarantined,
             }
         }
-        VaultOp::Restore(id) => {
+        VaultOp::Restore { id, allow } => {
+            let hash = vault.get(&id).ok().flatten().map(|item| item.hash_sha256);
             let result = vault.restore(&id);
             if result.success {
-                done(format!("Restored {}", result.restored_path.display()))
+                let restored = result.restored_path.display().to_string();
+                match (allow, hash) {
+                    (false, _) => done(format!("Restored {}", restored)),
+                    (true, Some(hash)) => match allow_hash(&hash) {
+                        Ok(()) => done(format!(
+                            "Restored {} and added it to the whitelist",
+                            restored
+                        )),
+                        Err(e) => fail(format!(
+                            "Restored {} but could not whitelist it: {}",
+                            restored, e
+                        )),
+                    },
+                    (true, None) => fail(format!(
+                        "Restored {} but could not whitelist it: hash unknown",
+                        restored
+                    )),
+                }
             } else {
                 fail(format!(
                     "Failed to restore: {}",
@@ -927,6 +1005,19 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
     }
 }
 
+/// Whitelist a file hash so the file is not flagged again.
+fn allow_hash(hash: &str) -> crate::core::error::Result<()> {
+    let whitelist = WhitelistManager::open(&WhitelistManager::default_path())?;
+    if whitelist.is_hash_whitelisted(hash)? {
+        return Ok(());
+    }
+    whitelist.add(&WhitelistEntry::by_hash(
+        uuid::Uuid::new_v4().to_string(),
+        hash.to_string(),
+        "Restored from quarantine".to_string(),
+    ))
+}
+
 /// Actions from dashboard.
 pub enum DashboardAction {
     StartQuickScan,
@@ -950,7 +1041,7 @@ pub enum ResultsAction {
 
 /// Actions from quarantine view.
 pub enum QuarantineAction {
-    Restore(String),
+    Restore { id: String, allow: bool },
     Delete(String),
     DeleteAll(Vec<String>),
     Refresh,
