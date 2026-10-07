@@ -17,7 +17,7 @@ PC-Peroxide is a lightweight, portable malware detection and removal utility for
 - **Language:** Rust (Edition 2021, requires Rust 1.70+)
 - **Async Runtime:** Tokio
 - **CLI:** Clap
-- **GUI:** Tauri/egui (optional feature)
+- **GUI:** egui/eframe 0.24 (optional `gui` feature)
 - **Database:** SQLite (rusqlite)
 - **PE Analysis:** Goblin
 - **Encryption:** AES-256-GCM
@@ -61,8 +61,9 @@ cargo build
 # Release build
 cargo build --release
 
-# Build with GUI
+# Build and run the GUI (Linux needs libgtk-3-dev for file dialogs)
 cargo build --features gui
+cargo run --features gui --bin pc-peroxide-gui
 
 # Run tests
 cargo test
@@ -166,6 +167,12 @@ cargo test scanner::
 ```
 
 EICAR test file is supported for detection testing.
+
+## GUI Architecture
+
+- `src/ui/gui/app.rs` owns all state; views (`dashboard.rs`, `scan_view.rs`, `results_view.rs`, `quarantine_view.rs`, `settings_view.rs`, `updates.rs`) render it and return actions.
+- Scans run through `scanner::BackgroundScan` (its own thread and Tokio runtime); the UI polls progress each frame and must never block. Quarantine vault operations and signature imports also run on worker threads.
+- CI builds and lints the GUI on Linux and Windows; keep `cargo clippy --features gui --all-targets -- -D warnings` clean.
 
 ## Important Notes
 
