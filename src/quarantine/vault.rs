@@ -101,6 +101,13 @@ impl QuarantineVault {
                 "File does not exist".to_string(),
             );
         }
+        // Removing a link would leave the file it points to in place.
+        if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+            return QuarantineResult::failure(
+                path.to_path_buf(),
+                "Path is a symbolic link; quarantine the file it points to instead".to_string(),
+            );
+        }
 
         // Calculate hash
         let hash = match self.calculate_hash(path) {
@@ -113,21 +120,39 @@ impl QuarantineVault {
             }
         };
 
-        // Check if already quarantined
-        match self.metadata.exists_by_hash(&hash) {
-            Ok(true) => {
-                return QuarantineResult::failure(
-                    path.to_path_buf(),
-                    "File already quarantined".to_string(),
-                );
+        // The vault may already hold this content from this path: the same
+        // file quarantined with the original kept, a retry after the original
+        // could not be removed, or the file dropped again by persistence.
+        // Its content is already preserved, so only remove this copy.
+        match self.metadata.find_by_hash_and_path(&hash, path) {
+            Ok(Some(existing)) => {
+                let vault_path = self.items_path().join(&existing.vault_filename);
+                if !delete_original {
+                    return QuarantineResult::failure(
+                        path.to_path_buf(),
+                        "File already quarantined".to_string(),
+                    );
+                }
+                return match self.operations.secure_delete(path) {
+                    Ok(()) => QuarantineResult::success(existing.id, path.to_path_buf(), vault_path),
+                    Err(e) => QuarantineResult::success_with_warning(
+                        existing.id,
+                        path.to_path_buf(),
+                        vault_path,
+                        format!(
+                            "File is in quarantine but the original could not be deleted: {}. Manual removal required.",
+                            e
+                        ),
+                    ),
+                };
             }
+            Ok(None) => {}
             Err(e) => {
                 return QuarantineResult::failure(
                     path.to_path_buf(),
                     format!("Database error: {}", e),
                 );
             }
-            _ => {}
         }
 
         // Get file size
@@ -238,6 +263,18 @@ impl QuarantineVault {
         let restore_path = dest
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| item.original_path.clone());
+
+        // Never overwrite a file (or follow a link) that has since appeared at
+        // the destination
+        if fs::symlink_metadata(&restore_path).is_ok() {
+            return RestoreResult::failure(
+                id.to_string(),
+                format!(
+                    "A file already exists at {}; move it or restore to another path",
+                    restore_path.display()
+                ),
+            );
+        }
 
         // Decrypt and restore
         if let Err(e) = self.encryption.decrypt_file(&vault_path, &restore_path) {
@@ -479,10 +516,84 @@ mod tests {
         let result1 = vault.quarantine(&file1, "Test", "test", 50, false);
         assert!(result1.success);
 
-        // Try to quarantine duplicate
-        let result2 = vault.quarantine(&file2, "Test", "test", 50, false);
-        assert!(!result2.success);
-        assert!(result2.error.unwrap().contains("already quarantined"));
+        // The same file again is a duplicate
+        let again = vault.quarantine(&file1, "Test", "test", 50, false);
+        assert!(!again.success);
+        assert!(again.error.unwrap().contains("already quarantined"));
+
+        // An identical copy elsewhere is quarantined and removed too
+        let result2 = vault.quarantine(&file2, "Test", "test", 50, true);
+        assert!(result2.success, "{:?}", result2.error);
+        assert!(!file2.exists());
+        assert_eq!(vault.count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_quarantine_redropped_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        let file_path = create_test_file(&files_dir, "svc.exe", b"payload");
+        assert!(
+            vault
+                .quarantine(&file_path, "T", "trojan", 100, true)
+                .success
+        );
+
+        // Persistence writes the identical file back to the same path: it is
+        // removed, and the vault keeps one copy of the content
+        create_test_file(&files_dir, "svc.exe", b"payload");
+        let again = vault.quarantine(&file_path, "T", "trojan", 100, true);
+        assert!(again.success, "{:?}", again.error);
+        assert!(!file_path.exists());
+        assert_eq!(vault.count().unwrap(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlinks_are_not_followed() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        // Quarantining a link is refused and leaves its target intact
+        let target = create_test_file(&files_dir, "tool", b"legitimate tool");
+        let link = files_dir.join("tool-link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(!vault.quarantine(&link, "T", "trojan", 100, true).success);
+        assert_eq!(fs::read(&target).unwrap(), b"legitimate tool");
+
+        // Restore refuses a dangling link planted at the original path
+        let original = create_test_file(&files_dir, "job.sh", b"quarantined");
+        let result = vault.quarantine(&original, "T", "trojan", 100, true);
+        assert!(result.success);
+        let elsewhere = temp_dir.path().join("elsewhere");
+        std::os::unix::fs::symlink(&elsewhere, &original).unwrap();
+        assert!(!vault.restore(&result.id).success);
+        assert!(!elsewhere.exists());
+    }
+
+    #[test]
+    fn test_restore_does_not_overwrite() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        let file_path = create_test_file(&files_dir, "setup.exe", b"old malware");
+        let result = vault.quarantine(&file_path, "Test", "test", 50, true);
+        assert!(result.success);
+
+        // A new, legitimate file appears at the same path
+        fs::write(&file_path, b"new legitimate file").unwrap();
+        let restore = vault.restore(&result.id);
+        assert!(!restore.success);
+        assert!(restore.error.unwrap().contains("already exists"));
+        assert_eq!(fs::read(&file_path).unwrap(), b"new legitimate file");
+        assert_eq!(vault.count().unwrap(), 1);
     }
 
     #[test]

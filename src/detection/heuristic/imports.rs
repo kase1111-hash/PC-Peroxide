@@ -33,9 +33,11 @@ pub struct ImportAnalyzer {
     combinations: Vec<ApiCombination>,
 }
 
-/// Definition of a suspicious API.
+/// Definition of a suspicious API. API names are masked (see
+/// `utils::masked`) so this binary does not match the YARA rules that look
+/// for them.
 struct SuspiciousApiDef {
-    name: &'static str,
+    name: String,
     category: &'static str,
     risk_level: &'static str,
     score: u8,
@@ -44,7 +46,7 @@ struct SuspiciousApiDef {
 
 /// Suspicious API combination.
 struct ApiCombination {
-    apis: Vec<&'static str>,
+    apis: Vec<String>,
     category: &'static str,
     risk_level: &'static str,
     bonus_score: u8,
@@ -71,42 +73,42 @@ impl ImportAnalyzer {
         vec![
             // Process injection APIs
             SuspiciousApiDef {
-                name: "VirtualAllocEx",
+                name: crate::masked!("VirtualAllocEx"),
                 category: "injection",
                 risk_level: "high",
                 score: 15,
                 description: "Allocates memory in another process (process injection)",
             },
             SuspiciousApiDef {
-                name: "WriteProcessMemory",
+                name: crate::masked!("WriteProcessMemory"),
                 category: "injection",
                 risk_level: "high",
                 score: 15,
                 description: "Writes to another process's memory (process injection)",
             },
             SuspiciousApiDef {
-                name: "CreateRemoteThread",
+                name: crate::masked!("CreateRemoteThread"),
                 category: "injection",
                 risk_level: "critical",
                 score: 20,
                 description: "Creates thread in another process (code injection)",
             },
             SuspiciousApiDef {
-                name: "NtUnmapViewOfSection",
+                name: crate::masked!("NtUnmapViewOfSection"),
                 category: "injection",
                 risk_level: "critical",
                 score: 25,
                 description: "Unmaps section (process hollowing)",
             },
             SuspiciousApiDef {
-                name: "QueueUserAPC",
+                name: crate::masked!("QueueUserAPC"),
                 category: "injection",
                 risk_level: "high",
                 score: 15,
                 description: "Queues APC to thread (APC injection)",
             },
             SuspiciousApiDef {
-                name: "NtQueueApcThread",
+                name: crate::masked!("NtQueueApcThread"),
                 category: "injection",
                 risk_level: "high",
                 score: 15,
@@ -114,28 +116,28 @@ impl ImportAnalyzer {
             },
             // Input handling APIs (common in games, input managers, accessibility software)
             SuspiciousApiDef {
-                name: "SetWindowsHookEx",
+                name: crate::masked!("SetWindowsHookEx"),
                 category: "keylogger",
                 risk_level: "medium",
                 score: 8, // Reduced: used by hotkey managers, accessibility
                 description: "Sets Windows hook",
             },
             SuspiciousApiDef {
-                name: "GetAsyncKeyState",
+                name: crate::masked!("GetAsyncKeyState"),
                 category: "keylogger",
                 risk_level: "low",
                 score: 2, // Reduced: extremely common in games
                 description: "Gets key state",
             },
             SuspiciousApiDef {
-                name: "GetKeyState",
+                name: crate::masked!("GetKeyState"),
                 category: "keylogger",
                 risk_level: "low",
                 score: 0, // Reduced to 0: basic input handling
                 description: "Gets key state",
             },
             SuspiciousApiDef {
-                name: "RegisterRawInputDevices",
+                name: crate::masked!("RegisterRawInputDevices"),
                 category: "keylogger",
                 risk_level: "low",
                 score: 2, // Reduced: used by games, input software
@@ -143,28 +145,28 @@ impl ImportAnalyzer {
             },
             // Cryptography APIs (ransomware indicators when combined, but commonly used by legitimate software)
             SuspiciousApiDef {
-                name: "CryptEncrypt",
+                name: crate::masked!("CryptEncrypt"),
                 category: "ransomware",
                 risk_level: "low",
                 score: 3, // Reduced: commonly used by legitimate crypto libraries
                 description: "Encrypts data (common in legitimate software)",
             },
             SuspiciousApiDef {
-                name: "CryptDecrypt",
+                name: crate::masked!("CryptDecrypt"),
                 category: "ransomware",
                 risk_level: "low",
                 score: 2, // Reduced: very common
                 description: "Decrypts data",
             },
             SuspiciousApiDef {
-                name: "CryptGenKey",
+                name: crate::masked!("CryptGenKey"),
                 category: "ransomware",
                 risk_level: "low",
                 score: 3, // Reduced: commonly used legitimately
                 description: "Generates crypto key",
             },
             SuspiciousApiDef {
-                name: "CryptAcquireContext",
+                name: crate::masked!("CryptAcquireContext"),
                 category: "ransomware",
                 risk_level: "low",
                 score: 2, // Reduced: very common
@@ -172,21 +174,21 @@ impl ImportAnalyzer {
             },
             // Downloading/networking (common in all internet-connected apps)
             SuspiciousApiDef {
-                name: "URLDownloadToFile",
+                name: crate::masked!("URLDownloadToFile"),
                 category: "downloader",
                 risk_level: "medium",
                 score: 8, // Reduced: used by updaters, installers
                 description: "Downloads file from URL",
             },
             SuspiciousApiDef {
-                name: "InternetReadFile",
+                name: crate::masked!("InternetReadFile"),
                 category: "downloader",
                 risk_level: "low",
                 score: 1, // Reduced: extremely common
                 description: "Reads from internet",
             },
             SuspiciousApiDef {
-                name: "HttpSendRequest",
+                name: crate::masked!("HttpSendRequest"),
                 category: "networking",
                 risk_level: "low",
                 score: 0, // Reduced to 0: basic networking
@@ -194,28 +196,28 @@ impl ImportAnalyzer {
             },
             // Anti-debugging (also used by legitimate software like games, anti-cheat, debuggers)
             SuspiciousApiDef {
-                name: "IsDebuggerPresent",
+                name: crate::masked!("IsDebuggerPresent"),
                 category: "anti_debug",
                 risk_level: "low",
                 score: 3, // Reduced: used by anti-cheat systems, games
                 description: "Checks for debugger",
             },
             SuspiciousApiDef {
-                name: "CheckRemoteDebuggerPresent",
+                name: crate::masked!("CheckRemoteDebuggerPresent"),
                 category: "anti_debug",
                 risk_level: "low",
                 score: 4, // Reduced: used by anti-cheat systems
                 description: "Checks for remote debugger",
             },
             SuspiciousApiDef {
-                name: "NtQueryInformationProcess",
+                name: crate::masked!("NtQueryInformationProcess"),
                 category: "anti_debug",
                 risk_level: "low",
                 score: 3, // Reduced: legitimate uses
                 description: "Queries process info",
             },
             SuspiciousApiDef {
-                name: "OutputDebugString",
+                name: crate::masked!("OutputDebugString"),
                 category: "anti_debug",
                 risk_level: "low",
                 score: 0, // Reduced to 0: debugging is normal
@@ -223,21 +225,21 @@ impl ImportAnalyzer {
             },
             // Persistence (common in legitimate installers and applications)
             SuspiciousApiDef {
-                name: "RegSetValueEx",
+                name: crate::masked!("RegSetValueEx"),
                 category: "persistence",
                 risk_level: "low",
                 score: 1, // Reduced: extremely common in legitimate software
                 description: "Sets registry value",
             },
             SuspiciousApiDef {
-                name: "CreateService",
+                name: crate::masked!("CreateService"),
                 category: "persistence",
                 risk_level: "low",
                 score: 4, // Reduced: used by legitimate installers
                 description: "Creates Windows service",
             },
             SuspiciousApiDef {
-                name: "ChangeServiceConfig",
+                name: crate::masked!("ChangeServiceConfig"),
                 category: "persistence",
                 risk_level: "low",
                 score: 3, // Reduced: used by service managers
@@ -245,21 +247,21 @@ impl ImportAnalyzer {
             },
             // Privilege operations (used by installers, admin tools)
             SuspiciousApiDef {
-                name: "AdjustTokenPrivileges",
+                name: crate::masked!("AdjustTokenPrivileges"),
                 category: "privilege",
                 risk_level: "low",
                 score: 4, // Reduced: used by installers, backup tools
                 description: "Adjusts token privileges",
             },
             SuspiciousApiDef {
-                name: "LookupPrivilegeValue",
+                name: crate::masked!("LookupPrivilegeValue"),
                 category: "privilege",
                 risk_level: "low",
                 score: 1, // Reduced: common setup operation
                 description: "Looks up privilege value",
             },
             SuspiciousApiDef {
-                name: "ImpersonateLoggedOnUser",
+                name: crate::masked!("ImpersonateLoggedOnUser"),
                 category: "privilege",
                 risk_level: "medium",
                 score: 8, // Reduced: used by services, admin tools
@@ -267,21 +269,21 @@ impl ImportAnalyzer {
             },
             // Shell execution (very common in legitimate software)
             SuspiciousApiDef {
-                name: "ShellExecute",
+                name: crate::masked!("ShellExecute"),
                 category: "execution",
                 risk_level: "low",
                 score: 2, // Reduced: very common
                 description: "Executes shell command",
             },
             SuspiciousApiDef {
-                name: "CreateProcess",
+                name: crate::masked!("CreateProcess"),
                 category: "execution",
                 risk_level: "low",
                 score: 1, // Reduced: extremely common in all software
                 description: "Creates new process",
             },
             SuspiciousApiDef {
-                name: "WinExec",
+                name: crate::masked!("WinExec"),
                 category: "execution",
                 risk_level: "low",
                 score: 4, // Reduced: legacy but still used
@@ -289,14 +291,14 @@ impl ImportAnalyzer {
             },
             // Screen/graphics operations (extremely common in GUI applications)
             SuspiciousApiDef {
-                name: "BitBlt",
+                name: crate::masked!("BitBlt"),
                 category: "spyware",
                 risk_level: "low",
                 score: 0, // Reduced to 0: used by all GUI apps
                 description: "Copies bitmap",
             },
             SuspiciousApiDef {
-                name: "GetDC",
+                name: crate::masked!("GetDC"),
                 category: "spyware",
                 risk_level: "low",
                 score: 0, // Reduced to 0: used by all GUI apps
@@ -304,21 +306,21 @@ impl ImportAnalyzer {
             },
             // Process manipulation
             SuspiciousApiDef {
-                name: "OpenProcess",
+                name: crate::masked!("OpenProcess"),
                 category: "process",
                 risk_level: "low",
                 score: 2, // Reduced: common in legitimate software
                 description: "Opens process handle",
             },
             SuspiciousApiDef {
-                name: "TerminateProcess",
+                name: crate::masked!("TerminateProcess"),
                 category: "process",
                 risk_level: "low",
                 score: 3, // Reduced: used by process managers, installers
                 description: "Terminates process",
             },
             SuspiciousApiDef {
-                name: "SuspendThread",
+                name: crate::masked!("SuspendThread"),
                 category: "process",
                 risk_level: "low",
                 score: 4, // Reduced: used by debuggers, profilers
@@ -326,21 +328,21 @@ impl ImportAnalyzer {
             },
             // Module loading (extremely common - nearly every program uses these)
             SuspiciousApiDef {
-                name: "LoadLibrary",
+                name: crate::masked!("LoadLibrary"),
                 category: "loading",
                 risk_level: "low",
                 score: 0, // Reduced to 0: used by virtually every program
                 description: "Loads library dynamically",
             },
             SuspiciousApiDef {
-                name: "GetProcAddress",
+                name: crate::masked!("GetProcAddress"),
                 category: "loading",
                 risk_level: "low",
                 score: 0, // Reduced to 0: used by virtually every program
                 description: "Gets function address",
             },
             SuspiciousApiDef {
-                name: "LdrLoadDll",
+                name: crate::masked!("LdrLoadDll"),
                 category: "loading",
                 risk_level: "medium",
                 score: 5, // Reduced: native but still legitimate in some cases
@@ -354,7 +356,11 @@ impl ImportAnalyzer {
         vec![
             // Classic process injection
             ApiCombination {
-                apis: vec!["VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread"],
+                apis: vec![
+                    crate::masked!("VirtualAllocEx"),
+                    crate::masked!("WriteProcessMemory"),
+                    crate::masked!("CreateRemoteThread"),
+                ],
                 category: "injection",
                 risk_level: "critical",
                 bonus_score: 30,
@@ -363,10 +369,10 @@ impl ImportAnalyzer {
             // Process hollowing
             ApiCombination {
                 apis: vec![
-                    "CreateProcess",
-                    "NtUnmapViewOfSection",
-                    "VirtualAllocEx",
-                    "WriteProcessMemory",
+                    crate::masked!("CreateProcess"),
+                    crate::masked!("NtUnmapViewOfSection"),
+                    crate::masked!("VirtualAllocEx"),
+                    crate::masked!("WriteProcessMemory"),
                 ],
                 category: "injection",
                 risk_level: "critical",
@@ -375,7 +381,10 @@ impl ImportAnalyzer {
             },
             // Keylogger pattern
             ApiCombination {
-                apis: vec!["SetWindowsHookEx", "GetAsyncKeyState"],
+                apis: vec![
+                    crate::masked!("SetWindowsHookEx"),
+                    crate::masked!("GetAsyncKeyState"),
+                ],
                 category: "keylogger",
                 risk_level: "high",
                 bonus_score: 20,
@@ -383,7 +392,11 @@ impl ImportAnalyzer {
             },
             // Ransomware pattern
             ApiCombination {
-                apis: vec!["CryptAcquireContext", "CryptGenKey", "CryptEncrypt"],
+                apis: vec![
+                    crate::masked!("CryptAcquireContext"),
+                    crate::masked!("CryptGenKey"),
+                    crate::masked!("CryptEncrypt"),
+                ],
                 category: "ransomware",
                 risk_level: "high",
                 bonus_score: 25,
@@ -391,7 +404,10 @@ impl ImportAnalyzer {
             },
             // Anti-debugging combo
             ApiCombination {
-                apis: vec!["IsDebuggerPresent", "CheckRemoteDebuggerPresent"],
+                apis: vec![
+                    crate::masked!("IsDebuggerPresent"),
+                    crate::masked!("CheckRemoteDebuggerPresent"),
+                ],
                 category: "anti_debug",
                 risk_level: "medium",
                 bonus_score: 10,
@@ -399,7 +415,10 @@ impl ImportAnalyzer {
             },
             // Dropper pattern
             ApiCombination {
-                apis: vec!["URLDownloadToFile", "CreateProcess"],
+                apis: vec![
+                    crate::masked!("URLDownloadToFile"),
+                    crate::masked!("CreateProcess"),
+                ],
                 category: "downloader",
                 risk_level: "high",
                 bonus_score: 20,
@@ -407,7 +426,10 @@ impl ImportAnalyzer {
             },
             // Privilege escalation
             ApiCombination {
-                apis: vec!["AdjustTokenPrivileges", "ImpersonateLoggedOnUser"],
+                apis: vec![
+                    crate::masked!("AdjustTokenPrivileges"),
+                    crate::masked!("ImpersonateLoggedOnUser"),
+                ],
                 category: "privilege",
                 risk_level: "high",
                 bonus_score: 15,
@@ -428,7 +450,7 @@ impl ImportAnalyzer {
             // Check against suspicious API list
             for api_def in &self.suspicious_apis {
                 // Case-insensitive match, also handle A/W suffixes
-                let matches = func_name.eq_ignore_ascii_case(api_def.name)
+                let matches = func_name.eq_ignore_ascii_case(&api_def.name)
                     || func_name.eq_ignore_ascii_case(&format!("{}A", api_def.name))
                     || func_name.eq_ignore_ascii_case(&format!("{}W", api_def.name))
                     || func_name.eq_ignore_ascii_case(&format!("{}Ex", api_def.name))
@@ -436,7 +458,7 @@ impl ImportAnalyzer {
                     || func_name.eq_ignore_ascii_case(&format!("{}ExW", api_def.name));
 
                 if matches {
-                    found_apis.push(api_def.name);
+                    found_apis.push(&api_def.name);
                     results.push(SuspiciousImport {
                         name: func_name.clone(),
                         dll: import.dll.clone(),

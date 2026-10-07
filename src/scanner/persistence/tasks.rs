@@ -598,11 +598,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_scan_all_non_windows() {
         let scanner = TaskScanner::new();
         let tasks = scanner.scan_all().unwrap();
-
-        #[cfg(not(target_os = "windows"))]
         assert!(tasks.is_empty());
     }
 }

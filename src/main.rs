@@ -6,9 +6,7 @@ use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
 use pc_peroxide::detection::SignatureDatabase;
-use pc_peroxide::quarantine::{
-    get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType,
-};
+use pc_peroxide::quarantine::{QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
     PersistenceScanner, ProcessScanner, ScanResultStore,
@@ -25,8 +23,13 @@ use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    match run().await {
-        Ok(()) => ExitCode::SUCCESS,
+    let cli = Cli::parse_args();
+    let silent = cli.silent;
+
+    match run(cli).await {
+        Ok(code) => code,
+        // Silent mode promises only 0 (clean), 1 (threats found) or 2 (error).
+        Err(_) if silent => ExitCode::from(2),
         Err(e) => {
             let report = create_cli_error_report(&e);
             eprintln!("{}", report);
@@ -40,10 +43,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run() -> Result<()> {
-    // Parse command-line arguments
-    let cli = Cli::parse_args();
-
+async fn run(cli: Cli) -> Result<ExitCode> {
     // Initialize logging based on verbosity (skip if silent)
     if !cli.silent {
         let log_config = if cli.verbose {
@@ -62,7 +62,7 @@ async fn run() -> Result<()> {
     }
 
     // Handle commands
-    match cli.command {
+    let result = match cli.command {
         Some(Commands::Scan {
             quick,
             full,
@@ -72,7 +72,7 @@ async fn run() -> Result<()> {
             no_action,
             yara,
         }) => {
-            run_scan(
+            return run_scan(
                 config,
                 quick,
                 full,
@@ -84,9 +84,9 @@ async fn run() -> Result<()> {
                 cli.format,
                 cli.silent,
             )
-            .await
+            .await;
         }
-        Some(Commands::Quarantine { action }) => run_quarantine(action, cli.format).await,
+        Some(Commands::Quarantine { action }) => run_quarantine(action, &config, cli.format).await,
         Some(Commands::Update { force, import }) => run_update(force, import).await,
         Some(Commands::Config { action }) => run_config(action, &config),
         Some(Commands::History { action }) => run_history(action, cli.format),
@@ -122,7 +122,8 @@ async fn run() -> Result<()> {
             println!("  pc-peroxide update           Update signatures");
             Ok(())
         }
-    }
+    };
+    result.map(|()| ExitCode::SUCCESS)
 }
 
 /// Run a malware scan.
@@ -138,7 +139,7 @@ async fn run_scan(
     yara: Option<std::path::PathBuf>,
     format: OutputFormat,
     silent: bool,
-) -> Result<()> {
+) -> Result<ExitCode> {
     let mut scanner = FileScanner::new(config);
 
     // Load custom YARA rules if provided
@@ -209,16 +210,11 @@ async fn run_scan(
 
     // Output results (unless silent)
     if silent {
-        // In silent mode, return based on threats found
-        // Exit code is handled by caller based on Result
-        return if summary.threats_found > 0 {
-            Err(pc_peroxide::core::error::Error::Custom(format!(
-                "Threats found: {}",
-                summary.threats_found
-            )))
+        return Ok(if summary.threats_found > 0 {
+            ExitCode::from(1)
         } else {
-            Ok(())
-        };
+            ExitCode::SUCCESS
+        });
     }
 
     match format {
@@ -259,7 +255,7 @@ async fn run_scan(
         }
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Format bytes for human-readable display.
@@ -296,8 +292,12 @@ fn format_duration(seconds: i64) -> String {
 }
 
 /// Manage quarantine.
-async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Result<()> {
-    let vault = QuarantineVault::open_default()?;
+async fn run_quarantine(
+    action: QuarantineAction,
+    config: &Config,
+    format: OutputFormat,
+) -> Result<()> {
+    let vault = QuarantineVault::open(&config.quarantine.quarantine_dir())?;
 
     match action {
         QuarantineAction::List => {
@@ -434,7 +434,7 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
                         format_bytes(stats.total_original_size)
                     );
                     println!("Vault Size:       {}", format_bytes(stats.vault_size));
-                    println!("Vault Location:   {}", get_quarantine_path().display());
+                    println!("Vault Location:   {}", vault.base_path().display());
 
                     if !stats.categories.is_empty() {
                         println!();
@@ -512,7 +512,12 @@ fn run_config(action: ConfigAction, config: &Config) -> Result<()> {
             target[*field] = parsed;
 
             // Deserialize back, validate, and save
-            config = serde_json::from_value(json)?;
+            config = serde_json::from_value(json).map_err(|e| {
+                pc_peroxide::core::error::Error::ConfigInvalid {
+                    field: key.clone(),
+                    message: e.to_string(),
+                }
+            })?;
             config.validate()?;
             config.save(&config_path)?;
             println!("Set {} = {}", key, value);
@@ -644,7 +649,7 @@ fn run_history(action: HistoryAction, format: OutputFormat) -> Result<()> {
         HistoryAction::Export {
             id,
             output,
-            format: export_fmt,
+            export_format: export_fmt,
         } => {
             // Get the scan to export
             let scan = if id == "latest" {
@@ -1006,8 +1011,12 @@ fn run_processes(
 
 /// Manage whitelist entries.
 fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
-    let whitelist_path = get_quarantine_path().join("whitelist.db");
-    let manager = WhitelistManager::open(&whitelist_path)?;
+    let path = WhitelistManager::default_path();
+    let manager = if matches!(action, WhitelistAction::List) {
+        WhitelistManager::open(&path)?
+    } else {
+        WhitelistManager::open_writable(&path)?
+    };
 
     match action {
         WhitelistAction::List => {

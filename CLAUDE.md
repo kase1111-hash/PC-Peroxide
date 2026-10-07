@@ -17,7 +17,7 @@ PC-Peroxide is a lightweight, portable malware detection and removal utility for
 - **Language:** Rust (Edition 2021, requires Rust 1.70+)
 - **Async Runtime:** Tokio
 - **CLI:** Clap
-- **GUI:** Tauri/egui (optional feature)
+- **GUI:** egui/eframe 0.24 (optional `gui` feature)
 - **Database:** SQLite (rusqlite)
 - **PE Analysis:** Goblin
 - **Encryption:** AES-256-GCM
@@ -61,8 +61,9 @@ cargo build
 # Release build
 cargo build --release
 
-# Build with GUI
+# Build and run the GUI (Linux needs libgtk-3-dev for file dialogs)
 cargo build --features gui
+cargo run --features gui --bin pc-peroxide-gui
 
 # Run tests
 cargo test
@@ -83,8 +84,11 @@ cargo run -- scan --full
 # Scan specific path
 cargo run -- scan --path "/path/to/scan"
 
-# Export results as JSON
-cargo run -- scan --full --output report.json --json
+# Export results to a file (json, html, csv, pdf)
+cargo run -- scan --full --output report.json --export-format json
+
+# Print results as JSON to stdout
+cargo run -- --format json scan --quick
 ```
 
 ## Windows Batch Scripts
@@ -164,6 +168,12 @@ cargo test scanner::
 
 EICAR test file is supported for detection testing.
 
+## GUI Architecture
+
+- `src/ui/gui/app.rs` owns all state; views (`dashboard.rs`, `scan_view.rs`, `results_view.rs`, `quarantine_view.rs`, `settings_view.rs`, `updates.rs`) render it and return actions.
+- Scans run through `scanner::BackgroundScan` (its own thread and Tokio runtime); the UI polls progress each frame and must never block. Quarantine vault operations and signature imports also run on worker threads.
+- CI builds and lints the GUI on Linux and Windows; keep `cargo clippy --features gui --all-targets -- -D warnings` clean.
+
 ## Important Notes
 
 - Windows-specific features use the `windows` crate for Win32 APIs
@@ -171,3 +181,4 @@ EICAR test file is supported for detection testing.
 - Secure deletion uses 3-pass random overwrite
 - SQLite is used for signatures, quarantine metadata, and scan history
 - Optional LLM integration available (OpenAI, Ollama) for enhanced analysis
+- Write detection strings (YARA rule strings, memory patterns, suspicious API names) with `crate::masked!` / `crate::masked_bytes!` so the binary does not contain them in plain text and flag itself; `tests/self_scan.rs` checks this

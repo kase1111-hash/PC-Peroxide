@@ -216,21 +216,22 @@ impl MemoryScanner {
         &self.patterns
     }
 
-    /// Default suspicious patterns to detect in memory.
+    /// Default suspicious patterns to detect in memory. Text patterns are
+    /// masked (see `utils::masked`) so this binary does not match them.
     fn default_patterns() -> Vec<MemoryPattern> {
         vec![
             // Metasploit/Meterpreter shellcode markers
-            MemoryPattern::new("metsrv_dll", b"metsrv.dll")
+            MemoryPattern::new("metsrv_dll", &crate::masked_bytes!("metsrv.dll"))
                 .with_description("Meterpreter DLL marker")
                 .with_severity(80),
-            MemoryPattern::new("meterpreter", b"meterpreter")
+            MemoryPattern::new("meterpreter", &crate::masked_bytes!("meterpreter"))
                 .with_description("Meterpreter string")
                 .with_severity(75),
             // Cobalt Strike markers
-            MemoryPattern::new("beacon_dll", b"beacon.dll")
+            MemoryPattern::new("beacon_dll", &crate::masked_bytes!("beacon.dll"))
                 .with_description("Cobalt Strike Beacon marker")
                 .with_severity(85),
-            MemoryPattern::new("cobaltstrike", b"cobaltstrike")
+            MemoryPattern::new("cobaltstrike", &crate::masked_bytes!("cobaltstrike"))
                 .with_description("Cobalt Strike string")
                 .with_severity(80),
             // Common shellcode patterns
@@ -245,38 +246,47 @@ impl MemoryScanner {
                 .with_description("ROR13 API hashing pattern")
                 .with_severity(50),
             // Mimikatz markers
-            MemoryPattern::new("mimikatz", b"mimikatz")
+            MemoryPattern::new("mimikatz", &crate::masked_bytes!("mimikatz"))
                 .with_description("Mimikatz string")
                 .with_severity(90),
-            MemoryPattern::new("sekurlsa", b"sekurlsa")
+            MemoryPattern::new("sekurlsa", &crate::masked_bytes!("sekurlsa"))
                 .with_description("Mimikatz sekurlsa module")
                 .with_severity(85),
             // Process injection markers
-            MemoryPattern::new("ntdll_inject", b"NtAllocateVirtualMemory")
-                .with_description("NT memory allocation API")
-                .with_severity(30),
-            MemoryPattern::new("kernel32_inject", b"VirtualAllocEx")
+            MemoryPattern::new(
+                "ntdll_inject",
+                &crate::masked_bytes!("NtAllocateVirtualMemory"),
+            )
+            .with_description("NT memory allocation API")
+            .with_severity(30),
+            MemoryPattern::new("kernel32_inject", &crate::masked_bytes!("VirtualAllocEx"))
                 .with_description("Remote memory allocation API")
                 .with_severity(35),
-            MemoryPattern::new("writeprocessmemory", b"WriteProcessMemory")
-                .with_description("Process memory write API")
-                .with_severity(35),
+            MemoryPattern::new(
+                "writeprocessmemory",
+                &crate::masked_bytes!("WriteProcessMemory"),
+            )
+            .with_description("Process memory write API")
+            .with_severity(35),
             // Reflective DLL markers
-            MemoryPattern::new("reflective_loader", b"ReflectiveLoader")
-                .with_description("Reflective DLL loader function")
-                .with_severity(70),
+            MemoryPattern::new(
+                "reflective_loader",
+                &crate::masked_bytes!("ReflectiveLoader"),
+            )
+            .with_description("Reflective DLL loader function")
+            .with_severity(70),
             // Empire/PowerShell markers
-            MemoryPattern::new("empire", b"Empire")
+            MemoryPattern::new("empire", &crate::masked_bytes!("Empire"))
                 .with_description("Empire framework marker")
                 .with_severity(70),
             // Generic suspicious strings
-            MemoryPattern::new("keylogger", b"keylog")
+            MemoryPattern::new("keylogger", &crate::masked_bytes!("keylog"))
                 .with_description("Keylogger string")
                 .with_severity(60),
-            MemoryPattern::new("ransomware", b".onion")
+            MemoryPattern::new("ransomware", &crate::masked_bytes!(".onion"))
                 .with_description("Tor .onion address")
                 .with_severity(40),
-            MemoryPattern::new("bitcoin_addr", b"bitcoin:")
+            MemoryPattern::new("bitcoin_addr", &crate::masked_bytes!("bitcoin:"))
                 .with_description("Bitcoin URI scheme")
                 .with_severity(30),
         ]
@@ -308,8 +318,6 @@ impl MemoryScanner {
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::Memory::{
             VirtualQueryEx, MEMORY_BASIC_INFORMATION, MEM_COMMIT, MEM_IMAGE, MEM_MAPPED,
-            PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
-            PAGE_GUARD, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
         };
         use windows::Win32::System::Threading::{
             OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,

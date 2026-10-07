@@ -54,12 +54,19 @@ impl Config {
         let config_path = Self::default_config_path();
 
         if config_path.exists() {
-            match Self::load(&config_path) {
-                Ok(config) => return config,
+            return match Self::load(&config_path) {
+                Ok(config) => config,
                 Err(e) => {
-                    log::warn!("Failed to load config, using defaults: {}", e);
+                    // Keep the file: overwriting it would destroy settings
+                    // the user can still fix by hand.
+                    log::warn!(
+                        "Failed to load config {}, using defaults: {}",
+                        config_path.display(),
+                        e
+                    );
+                    Self::default()
                 }
-            }
+            };
         }
 
         let config = Self::default();
@@ -108,6 +115,16 @@ impl Config {
                 field: "scan.max_archive_depth".to_string(),
                 message: "Must be between 1 and 10".to_string(),
             });
+        }
+
+        if let Some(ref path) = self.quarantine.vault_path {
+            let blank = path.as_os_str().to_string_lossy().trim().is_empty();
+            if !blank && !path.is_absolute() {
+                return Err(Error::ConfigInvalid {
+                    field: "quarantine.vault_path".to_string(),
+                    message: "Must be an absolute path".to_string(),
+                });
+            }
         }
 
         if self.logging.keep_logs_days == 0 {
@@ -333,11 +350,15 @@ impl Default for QuarantineConfig {
 }
 
 impl QuarantineConfig {
-    /// Get the effective quarantine directory.
+    /// Get the effective quarantine vault directory: `vault_path` if set,
+    /// otherwise the platform default where the vault has always lived.
     pub fn quarantine_dir(&self) -> PathBuf {
+        // An empty path (e.g. from `config set quarantine.vault_path ""`)
+        // means "unset", not the current directory.
         self.vault_path
             .clone()
-            .unwrap_or_else(|| Config::data_dir().join("quarantine"))
+            .filter(|p| !p.as_os_str().to_string_lossy().trim().is_empty())
+            .unwrap_or_else(crate::quarantine::get_quarantine_path)
     }
 }
 
@@ -423,6 +444,36 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_quarantine_dir() {
+        let mut config = QuarantineConfig::default();
+        assert_eq!(
+            config.quarantine_dir(),
+            crate::quarantine::get_quarantine_path()
+        );
+        let custom = std::env::temp_dir().join("custom-vault");
+        config.vault_path = Some(custom.clone());
+        assert_eq!(config.quarantine_dir(), custom);
+
+        // Blank means unset, not the current directory
+        config.vault_path = Some(PathBuf::from(""));
+        assert_eq!(
+            config.quarantine_dir(),
+            crate::quarantine::get_quarantine_path()
+        );
+    }
+
+    #[test]
+    fn test_relative_vault_path_rejected() {
+        let mut config = Config::default();
+        config.quarantine.vault_path = Some(PathBuf::from("relative/vault"));
+        assert!(config.validate().is_err());
+        config.quarantine.vault_path = Some(PathBuf::from(""));
+        assert!(config.validate().is_ok());
+        config.quarantine.vault_path = Some(std::env::temp_dir().join("vault"));
         assert!(config.validate().is_ok());
     }
 

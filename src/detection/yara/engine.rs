@@ -33,7 +33,8 @@ impl YaraEngine {
         Ok(engine)
     }
 
-    /// Load default built-in rules.
+    /// Load default built-in rules. Rule strings are masked (see
+    /// `utils::masked`) so this binary does not match its own rules.
     fn load_default_rules(&mut self) -> Result<()> {
         // Ransomware detection
         self.add_rule(
@@ -43,16 +44,28 @@ impl YaraEngine {
                 .with_category("ransomware")
                 .with_string(StringPattern::text_nocase(
                     "$ransom1",
-                    "your files have been encrypted",
+                    &crate::masked!("your files have been encrypted"),
                 ))
                 .with_string(StringPattern::text_nocase(
                     "$ransom2",
-                    "your personal files are encrypted",
+                    &crate::masked!("your personal files are encrypted"),
                 ))
-                .with_string(StringPattern::text_nocase("$ransom3", "decrypt your files"))
-                .with_string(StringPattern::text_nocase("$ransom4", "bitcoin"))
-                .with_string(StringPattern::text_nocase("$ransom5", "pay the ransom"))
-                .with_string(StringPattern::text_nocase("$ransom6", "restore your files"))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom3",
+                    &crate::masked!("decrypt your files"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom4",
+                    &crate::masked!("bitcoin"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom5",
+                    &crate::masked!("pay the ransom"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$ransom6",
+                    &crate::masked!("restore your files"),
+                ))
                 .with_condition(Condition::And(
                     Box::new(Condition::IsPE),
                     Box::new(Condition::AtLeast(2)),
@@ -65,10 +78,22 @@ impl YaraEngine {
                 .with_description("Generic keylogger detection")
                 .with_severity("high")
                 .with_category("spyware")
-                .with_string(StringPattern::text("$api1", "GetAsyncKeyState"))
-                .with_string(StringPattern::text("$api2", "GetKeyboardState"))
-                .with_string(StringPattern::text("$api3", "SetWindowsHookEx"))
-                .with_string(StringPattern::text("$api4", "GetForegroundWindow"))
+                .with_string(StringPattern::text(
+                    "$api1",
+                    &crate::masked!("GetAsyncKeyState"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api2",
+                    &crate::masked!("GetKeyboardState"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api3",
+                    &crate::masked!("SetWindowsHookEx"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api4",
+                    &crate::masked!("GetForegroundWindow"),
+                ))
                 .with_condition(Condition::And(
                     Box::new(Condition::IsPE),
                     Box::new(Condition::AtLeast(3)),
@@ -81,11 +106,26 @@ impl YaraEngine {
                 .with_description("Generic process injection detection")
                 .with_severity("high")
                 .with_category("injection")
-                .with_string(StringPattern::text("$api1", "VirtualAllocEx"))
-                .with_string(StringPattern::text("$api2", "WriteProcessMemory"))
-                .with_string(StringPattern::text("$api3", "CreateRemoteThread"))
-                .with_string(StringPattern::text("$api4", "NtCreateThreadEx"))
-                .with_string(StringPattern::text("$api5", "RtlCreateUserThread"))
+                .with_string(StringPattern::text(
+                    "$api1",
+                    &crate::masked!("VirtualAllocEx"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api2",
+                    &crate::masked!("WriteProcessMemory"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api3",
+                    &crate::masked!("CreateRemoteThread"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api4",
+                    &crate::masked!("NtCreateThreadEx"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api5",
+                    &crate::masked!("RtlCreateUserThread"),
+                ))
                 .with_condition(Condition::And(
                     Box::new(Condition::IsPE),
                     Box::new(Condition::AtLeast(2)),
@@ -109,9 +149,15 @@ impl YaraEngine {
                 .with_description("Cobalt Strike beacon detection")
                 .with_severity("critical")
                 .with_category("c2")
-                .with_string(StringPattern::text("$beacon1", "beacon.dll"))
-                .with_string(StringPattern::text("$beacon2", "%s.4444"))
-                .with_string(StringPattern::text("$beacon3", "ReflectiveLoader"))
+                .with_string(StringPattern::text(
+                    "$beacon1",
+                    &crate::masked!("beacon.dll"),
+                ))
+                .with_string(StringPattern::text("$beacon2", &crate::masked!("%s.4444")))
+                .with_string(StringPattern::text(
+                    "$beacon3",
+                    &crate::masked!("ReflectiveLoader"),
+                ))
                 .with_string(StringPattern::hex("$magic", "4D5A4552"))
                 .with_condition(Condition::And(
                     Box::new(Condition::IsPE),
@@ -125,11 +171,20 @@ impl YaraEngine {
                 .with_description("Generic credential stealer detection")
                 .with_severity("high")
                 .with_category("stealer")
-                .with_string(StringPattern::text("$path1", "Login Data"))
-                .with_string(StringPattern::text("$path2", "logins.json"))
-                .with_string(StringPattern::text("$path3", "signons.sqlite"))
-                .with_string(StringPattern::text("$api1", "CryptUnprotectData"))
-                .with_string(StringPattern::text("$api2", "sqlite3_"))
+                .with_string(StringPattern::text("$path1", &crate::masked!("Login Data")))
+                .with_string(StringPattern::text(
+                    "$path2",
+                    &crate::masked!("logins.json"),
+                ))
+                .with_string(StringPattern::text(
+                    "$path3",
+                    &crate::masked!("signons.sqlite"),
+                ))
+                .with_string(StringPattern::text(
+                    "$api1",
+                    &crate::masked!("CryptUnprotectData"),
+                ))
+                .with_string(StringPattern::text("$api2", &crate::masked!("sqlite3_")))
                 .with_condition(Condition::And(
                     Box::new(Condition::IsPE),
                     Box::new(Condition::AtLeast(2)),
@@ -142,11 +197,26 @@ impl YaraEngine {
                 .with_description("Generic cryptocurrency miner detection")
                 .with_severity("medium")
                 .with_category("miner")
-                .with_string(StringPattern::text_nocase("$pool1", "stratum+tcp://"))
-                .with_string(StringPattern::text_nocase("$pool2", "stratum+ssl://"))
-                .with_string(StringPattern::text_nocase("$xmr1", "xmrig"))
-                .with_string(StringPattern::text_nocase("$xmr2", "randomx"))
-                .with_string(StringPattern::text_nocase("$xmr3", "cryptonight"))
+                .with_string(StringPattern::text_nocase(
+                    "$pool1",
+                    &crate::masked!("stratum+tcp://"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$pool2",
+                    &crate::masked!("stratum+ssl://"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$xmr1",
+                    &crate::masked!("xmrig"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$xmr2",
+                    &crate::masked!("randomx"),
+                ))
+                .with_string(StringPattern::text_nocase(
+                    "$xmr3",
+                    &crate::masked!("cryptonight"),
+                ))
                 .with_condition(Condition::AtLeast(2)),
         )?;
 
@@ -154,11 +224,13 @@ impl YaraEngine {
         self.add_rule(
             YaraRule::new("EICAR_TestFile")
                 .with_description("EICAR test file")
-                .with_severity("info")
+                .with_severity("low")
                 .with_category("test")
                 .with_string(StringPattern::text(
                     "$eicar",
-                    "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
+                    &crate::masked!(
+                        "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+                    ),
                 ))
                 .with_condition(Condition::Any),
         )?;
@@ -307,6 +379,22 @@ mod tests {
 
         assert!(!matches.is_empty());
         assert!(matches.iter().any(|m| m.rule_name == "EICAR_TestFile"));
+    }
+
+    #[test]
+    fn test_builtin_rule_severities_are_recognized() {
+        // An unrecognized severity is reported as HIGH, so every built-in
+        // rule must use a level the detection pipeline understands.
+        let engine = YaraEngine::with_default_rules().unwrap();
+        for rule in &engine.rules {
+            let severity = rule.meta.severity.as_deref().unwrap_or_default();
+            assert!(
+                crate::core::types::Severity::parse(severity).is_some(),
+                "rule {} has unrecognized severity {:?}",
+                rule.name,
+                severity
+            );
+        }
     }
 
     #[test]

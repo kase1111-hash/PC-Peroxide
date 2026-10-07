@@ -15,6 +15,7 @@ pub use connections::{
 pub use ports::{PortCategory, PortInfo, SuspiciousPortDetector};
 
 use crate::core::error::Result;
+use std::collections::HashSet;
 use std::net::IpAddr;
 
 /// Network scanner combining connection enumeration and suspicious port detection.
@@ -164,6 +165,22 @@ impl NetworkScanner {
     /// Scan all network connections and identify suspicious ones.
     pub fn scan_all(&self) -> Result<Vec<NetworkScanResult>> {
         let connections = self.connection_scanner.enumerate_connections()?;
+        Ok(self.analyze_connections(connections))
+    }
+
+    /// Score connections against the port database.
+    ///
+    /// Only the service side of a connection says anything about it; the other
+    /// side is an OS-assigned ephemeral port (32768-60999 on Linux). So the
+    /// unknown-port heuristic applies to the local port of listeners and
+    /// inbound connections, and to the remote port of outbound ones, while
+    /// known-bad ports are flagged on either side.
+    fn analyze_connections(&self, connections: Vec<Connection>) -> Vec<NetworkScanResult> {
+        let listening_ports: HashSet<u16> = connections
+            .iter()
+            .filter(|c| c.state == ConnectionState::Listen)
+            .map(|c| c.local_port)
+            .collect();
 
         let mut results = Vec::new();
         for conn in connections {
@@ -175,8 +192,21 @@ impl NetworkScanner {
                 continue;
             }
 
-            let port_info = self.port_detector.analyze_port(conn.local_port);
-            let remote_port_info = conn.remote_port.map(|p| self.port_detector.analyze_port(p));
+            let inbound = conn.state == ConnectionState::Listen
+                || conn.remote_port.is_none()
+                || listening_ports.contains(&conn.local_port);
+
+            let mut port_info = self.port_detector.analyze_port(conn.local_port);
+            if !inbound {
+                ignore_unknown_port(&mut port_info);
+            }
+            let remote_port_info = conn.remote_port.map(|p| {
+                let mut info = self.port_detector.analyze_port(p);
+                if inbound {
+                    ignore_unknown_port(&mut info);
+                }
+                info
+            });
 
             let suspicious =
                 port_info.suspicious || remote_port_info.as_ref().is_some_and(|p| p.suspicious);
@@ -195,7 +225,7 @@ impl NetworkScanner {
             });
         }
 
-        Ok(results)
+        results
     }
 
     /// Scan only suspicious network connections.
@@ -221,6 +251,14 @@ impl NetworkScanner {
     /// Get detailed IP reputation information.
     pub fn get_ip_reputation(&self, ip: &IpAddr) -> Option<IpReputationResult> {
         self.ip_reputation.check(ip)
+    }
+}
+
+/// Drop the suspicion an unknown port gets just for being in the registered range.
+fn ignore_unknown_port(info: &mut PortInfo) {
+    if info.category == PortCategory::Unknown {
+        info.suspicious = false;
+        info.severity = 0;
     }
 }
 
@@ -256,6 +294,42 @@ mod tests {
         let scanner = NetworkScanner::new();
         // Should not panic
         let _ = scanner.scan_all();
+    }
+
+    fn tcp(local_port: u16, remote_port: Option<u16>, state: ConnectionState) -> Connection {
+        Connection {
+            conn_type: ConnectionType::Tcp,
+            local_addr: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            local_port,
+            remote_addr: remote_port.map(|_| IpAddr::V4(Ipv4Addr::new(203, 0, 113, 5))),
+            remote_port,
+            state,
+            pid: None,
+            process_name: None,
+        }
+    }
+
+    #[test]
+    fn test_ephemeral_ports_are_not_suspicious() {
+        use ConnectionState::{Established, Listen};
+
+        let scanner = NetworkScanner::new().with_listening(true);
+        let results = scanner.analyze_connections(vec![
+            // Outbound HTTPS from a Linux ephemeral port
+            tcp(40000, Some(443), Established),
+            // Inbound SSH from a client's ephemeral port
+            tcp(22, None, Listen),
+            tcp(22, Some(40001), Established),
+            // Outbound to a Meterpreter port
+            tcp(40002, Some(4444), Established),
+            // Outbound to an unknown registered port
+            tcp(40003, Some(30000), Established),
+            // Listener on an unknown registered port
+            tcp(30000, None, Listen),
+        ]);
+
+        let flagged: Vec<bool> = results.iter().map(|r| r.suspicious).collect();
+        assert_eq!(flagged, [false, false, false, true, true, true]);
     }
 
     #[test]

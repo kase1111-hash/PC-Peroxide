@@ -1,39 +1,44 @@
 //! Scan progress view component.
 
-#[cfg(feature = "gui")]
 use eframe::egui::{self, Color32, RichText, Rounding, Ui, Vec2};
 
 use super::app::{ScanAction, ScanState};
 use super::theme::Theme;
-use crate::core::types::ScanType;
+use crate::core::types::{ScanStatus, ScanType};
+use crate::scanner::ScanRequest;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 /// Scan view state.
 pub struct ScanView {
     theme: Theme,
-    scan_state: Arc<Mutex<ScanState>>,
     /// Selected scan type for new scans
     selected_scan_type: ScanType,
     /// Custom paths input
     custom_paths_text: String,
+    /// Paths chosen with a picker, used as-is while the text still shows
+    /// them (a folder name may itself contain ';')
+    picked_paths: Option<(String, Vec<PathBuf>)>,
 }
 
 impl ScanView {
     /// Create a new scan view.
-    pub fn new(scan_state: Arc<Mutex<ScanState>>, theme: Theme) -> Self {
+    pub fn new(theme: Theme) -> Self {
         Self {
             theme,
-            scan_state,
             selected_scan_type: ScanType::Quick,
             custom_paths_text: String::new(),
+            picked_paths: None,
         }
     }
 
+    /// Use a different theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     /// Render the scan view.
-    pub fn render(&mut self, ui: &mut Ui) -> Option<ScanAction> {
+    pub fn render(&mut self, ui: &mut Ui, state: &ScanState) -> Option<ScanAction> {
         let mut action = None;
-        let state = self.scan_state.lock().unwrap().clone();
 
         ui.vertical(|ui| {
             ui.add_space(20.0);
@@ -44,9 +49,11 @@ impl ScanView {
             ui.add_space(20.0);
 
             if state.is_scanning {
-                action = self.render_scan_progress(ui, &state).or(action);
-            } else {
-                action = self.render_scan_options(ui, &state).or(action);
+                if let Some(a) = self.render_scan_progress(ui, state) {
+                    action = Some(a);
+                }
+            } else if let Some(a) = self.render_scan_options(ui, state) {
+                action = Some(a);
             }
         });
 
@@ -73,7 +80,7 @@ impl ScanView {
                             ui.spinner();
                             ui.add_space(10.0);
                             ui.label(
-                                RichText::new(format!("{:?} Scan in Progress", state.scan_type))
+                                RichText::new(format!("{} in Progress", state.scan_type))
                                     .size(18.0)
                                     .strong()
                                     .color(self.theme.text_primary),
@@ -82,30 +89,38 @@ impl ScanView {
 
                         ui.add_space(20.0);
 
-                        // Progress bar
-                        ui.add(
-                            egui::ProgressBar::new(state.progress)
-                                .text(format!("{:.1}%", state.progress * 100.0))
-                                .animate(true),
-                        );
+                        // Progress bar; the total is unknown until discovery ends
+                        let bar = match state.total_files {
+                            Some(_) => egui::ProgressBar::new(state.progress)
+                                .text(format!("{:.1}%", state.progress * 100.0)),
+                            None => egui::ProgressBar::new(0.0).text(format!(
+                                "Discovering files... {} folders",
+                                state.directories_found
+                            )),
+                        };
+                        ui.add(bar.animate(true));
 
                         ui.add_space(15.0);
 
                         // Stats
                         ui.horizontal(|ui| {
                             ui.label(self.theme.label("Files scanned:"));
-                            ui.label(self.theme.value(&state.files_scanned.to_string()));
+                            let files = match state.total_files {
+                                Some(total) => format!("{} / {}", state.files_scanned, total),
+                                None => state.files_scanned.to_string(),
+                            };
+                            ui.label(self.theme.value(&files));
 
                             ui.add_space(30.0);
 
                             ui.label(self.theme.label("Threats found:"));
-                            let threat_color = if state.threats_found.is_empty() {
+                            let threat_color = if state.live_threats.is_empty() {
                                 self.theme.success
                             } else {
                                 self.theme.danger
                             };
                             ui.label(
-                                RichText::new(state.threats_found.len().to_string())
+                                RichText::new(state.live_threats.len().to_string())
                                     .size(18.0)
                                     .color(threat_color)
                                     .strong(),
@@ -119,7 +134,7 @@ impl ScanView {
                             ui.horizontal(|ui| {
                                 ui.label(self.theme.label("Scanning:"));
                                 ui.label(
-                                    RichText::new(&state.current_file)
+                                    RichText::new(super::truncate_start(&state.current_file, 80))
                                         .size(12.0)
                                         .color(self.theme.text_secondary)
                                         .monospace(),
@@ -130,16 +145,18 @@ impl ScanView {
                         ui.add_space(20.0);
 
                         // Cancel button
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("Cancel Scan").color(Color32::WHITE),
-                                )
+                        let label = if state.cancelling {
+                            "Cancelling..."
+                        } else {
+                            "Cancel Scan"
+                        };
+                        let cancel = ui.add_enabled(
+                            !state.cancelling,
+                            egui::Button::new(RichText::new(label).color(Color32::WHITE))
                                 .fill(self.theme.danger)
                                 .min_size(Vec2::new(120.0, 36.0)),
-                            )
-                            .clicked()
-                        {
+                        );
+                        if cancel.clicked() {
                             action = Some(ScanAction::Cancel);
                         }
                     });
@@ -147,7 +164,7 @@ impl ScanView {
         });
 
         // Threat list during scan
-        if !state.threats_found.is_empty() {
+        if !state.live_threats.is_empty() {
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
@@ -155,19 +172,15 @@ impl ScanView {
             });
             ui.add_space(10.0);
 
-            ui.horizontal(|ui| {
-                ui.add_space(20.0);
+            ui.indent("scan_view_1", |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(200.0)
                     .show(ui, |ui| {
-                        for threat in &state.threats_found {
+                        for threat in &state.live_threats {
                             ui.horizontal(|ui| {
                                 let severity_color =
-                                    self.theme.severity_color(&format!("{:?}", threat.severity));
-                                ui.colored_label(
-                                    severity_color,
-                                    format!("[{:?}]", threat.severity),
-                                );
+                                    self.theme.severity_color(&threat.severity.to_string());
+                                ui.colored_label(severity_color, format!("[{}]", threat.severity));
                                 ui.label(&threat.threat_name);
                                 ui.label(
                                     RichText::new(threat.path.display().to_string())
@@ -212,7 +225,7 @@ impl ScanView {
                         }
                         ui.label(
                             self.theme
-                                .label("Fast scan of common malware locations (~2 min)"),
+                                .label("Common malware locations: temp, downloads, startup"),
                         );
                         ui.add_space(10.0);
 
@@ -226,7 +239,7 @@ impl ScanView {
                         }
                         ui.label(
                             self.theme
-                                .label("Comprehensive scan of entire system (~30 min)"),
+                                .label("Every drive; can take hours on large disks"),
                         );
                         ui.add_space(10.0);
 
@@ -245,16 +258,20 @@ impl ScanView {
 
                             ui.horizontal(|ui| {
                                 ui.text_edit_singleline(&mut self.custom_paths_text);
-                                if ui.button("Browse...").clicked() {
+                                if ui.button("Folders...").clicked() {
                                     if let Some(paths) = rfd::FileDialog::new()
-                                        .set_title("Select files or folders to scan")
+                                        .set_title("Select folders to scan")
                                         .pick_folders()
                                     {
-                                        self.custom_paths_text = paths
-                                            .iter()
-                                            .map(|p| p.display().to_string())
-                                            .collect::<Vec<_>>()
-                                            .join(";");
+                                        self.set_custom_paths(&paths);
+                                    }
+                                }
+                                if ui.button("Files...").clicked() {
+                                    if let Some(paths) = rfd::FileDialog::new()
+                                        .set_title("Select files to scan")
+                                        .pick_files()
+                                    {
+                                        self.set_custom_paths(&paths);
                                     }
                                 }
                             });
@@ -277,16 +294,12 @@ impl ScanView {
                             )
                             .clicked()
                         {
-                            let paths = if self.selected_scan_type == ScanType::Custom {
-                                self.custom_paths_text
-                                    .split(';')
-                                    .filter(|s| !s.is_empty())
-                                    .map(|s| PathBuf::from(s.trim()))
-                                    .collect()
-                            } else {
-                                Vec::new()
+                            let request = match self.selected_scan_type {
+                                ScanType::Full => ScanRequest::Full,
+                                ScanType::Custom => ScanRequest::Custom(self.custom_paths()),
+                                _ => ScanRequest::Quick,
                             };
-                            action = Some(ScanAction::StartScan(self.selected_scan_type, paths));
+                            action = Some(ScanAction::StartScan(request));
                         }
                     });
                 });
@@ -310,6 +323,13 @@ impl ScanView {
                                 ui.label(self.theme.label("Type:"));
                                 ui.label(self.theme.value(&format!("{}", summary.scan_type)));
                             });
+
+                            if summary.status == ScanStatus::Cancelled {
+                                ui.label(
+                                    RichText::new("Cancelled before finishing")
+                                        .color(self.theme.warning),
+                                );
+                            }
 
                             ui.horizontal(|ui| {
                                 ui.label(self.theme.label("Files:"));
@@ -340,10 +360,8 @@ impl ScanView {
 
                             ui.add_space(15.0);
 
-                            if summary.threats_found > 0 {
-                                if ui.button("View Results").clicked() {
-                                    action = Some(ScanAction::ViewResults);
-                                }
+                            if summary.threats_found > 0 && ui.button("View Results").clicked() {
+                                action = Some(ScanAction::ViewResults);
                             }
                         });
                     });
@@ -353,8 +371,35 @@ impl ScanView {
         action
     }
 
+    /// Replace the custom path list with picked paths.
+    fn set_custom_paths(&mut self, paths: &[PathBuf]) {
+        self.custom_paths_text = paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";");
+        self.picked_paths = Some((self.custom_paths_text.clone(), paths.to_vec()));
+    }
+
+    /// The custom paths to scan: the picked paths if the text still shows
+    /// them, otherwise the typed semicolon-separated list. Surrounding
+    /// quotes (as added by Explorer's "Copy as path") are removed.
+    fn custom_paths(&self) -> Vec<PathBuf> {
+        if let Some((ref text, ref paths)) = self.picked_paths {
+            if *text == self.custom_paths_text {
+                return paths.clone();
+            }
+        }
+        self.custom_paths_text
+            .split(';')
+            .map(|s| s.trim().trim_matches('"').trim())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .collect()
+    }
+
     /// Create a scan type radio button.
-    fn scan_type_radio(&self, label: &str, selected: bool) -> egui::Button {
+    fn scan_type_radio(&self, label: &str, selected: bool) -> egui::Button<'_> {
         let text_color = if selected {
             self.theme.primary
         } else {
@@ -368,7 +413,7 @@ impl ScanView {
                 Color32::TRANSPARENT
             })
             .stroke(if selected {
-                egui::Stroke::new(1.0, self.theme.primary)
+                egui::Stroke::new(1.0_f32, self.theme.primary)
             } else {
                 egui::Stroke::NONE
             })
@@ -382,8 +427,25 @@ mod tests {
 
     #[test]
     fn test_scan_view_creation() {
-        let theme = Theme::default();
-        let scan_state = Arc::new(Mutex::new(ScanState::default()));
-        let _view = ScanView::new(scan_state, theme);
+        let _view = ScanView::new(Theme::default());
+    }
+
+    #[test]
+    fn test_custom_paths_parsing() {
+        let mut view = ScanView::new(Theme::default());
+        view.custom_paths_text = " /a/b ; ;\"/c d/e\";".to_string();
+        assert_eq!(
+            view.custom_paths(),
+            [PathBuf::from("/a/b"), PathBuf::from("/c d/e")]
+        );
+
+        // Picked paths are used as-is, even with ';' in a name
+        let picked = [PathBuf::from("/data/backups;old")];
+        view.set_custom_paths(&picked);
+        assert_eq!(view.custom_paths(), picked);
+
+        // Editing the text switches back to parsing it
+        view.custom_paths_text.push_str(";/tmp");
+        assert_eq!(view.custom_paths().len(), 3);
     }
 }

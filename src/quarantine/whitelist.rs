@@ -8,9 +8,11 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::error::{Error, Result};
+use crate::core::types::Detection;
+use crate::utils::hash::HashCalculator;
 
 /// Type of whitelist entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +99,11 @@ pub struct WhitelistManager {
 }
 
 impl WhitelistManager {
+    /// Default location of the whitelist database.
+    pub fn default_path() -> PathBuf {
+        super::get_quarantine_path().join("whitelist.db")
+    }
+
     /// Open or create the whitelist database.
     pub fn open(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
@@ -109,6 +116,19 @@ impl WhitelistManager {
         let conn = Connection::open(db_path)?;
         let manager = Self { conn };
         manager.initialize()?;
+        Ok(manager)
+    }
+
+    /// Open the whitelist to change it. SQLite quietly opens a file it cannot
+    /// write read-only, which is fine for checking entries (scans, listing)
+    /// but would only fail on the first change; refuse it up front instead.
+    pub fn open_writable(db_path: &Path) -> Result<Self> {
+        let manager = Self::open(db_path)?;
+        if manager.conn.is_readonly(rusqlite::DatabaseName::Main)? {
+            return Err(Error::DatabaseReadOnly {
+                path: db_path.to_path_buf(),
+            });
+        }
         Ok(manager)
     }
 
@@ -275,11 +295,11 @@ impl WhitelistManager {
         Ok(rows > 0)
     }
 
-    /// Check if a hash is whitelisted.
+    /// Check if a hash is whitelisted (case-insensitive).
     pub fn is_hash_whitelisted(&self, hash: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM whitelist
-             WHERE whitelist_type = 'hash' AND pattern = ?1 AND active = 1",
+             WHERE whitelist_type = 'hash' AND lower(pattern) = lower(?1) AND active = 1",
             [hash],
             |row| row.get(0),
         )?;
@@ -313,6 +333,32 @@ impl WhitelistManager {
         }
 
         Ok(false)
+    }
+
+    /// Check if any active entry suppresses a detection.
+    ///
+    /// Hash entries are compared against the detection's hash (for an archive,
+    /// the hash of the matching member) and against the hash of the file itself.
+    pub fn is_whitelisted(&self, detection: &Detection) -> Result<bool> {
+        if self.is_path_whitelisted(&detection.path)?
+            || self.is_detection_whitelisted(&detection.threat_name)?
+        {
+            return Ok(true);
+        }
+
+        if let Some(ref hash) = detection.sha256 {
+            if self.is_hash_whitelisted(hash)? {
+                return Ok(true);
+            }
+        }
+
+        if self.list_by_type(WhitelistType::Hash)?.is_empty() {
+            return Ok(false);
+        }
+        match HashCalculator::sha256_file(&detection.path) {
+            Ok(hash) => self.is_hash_whitelisted(&hash),
+            Err(_) => Ok(false),
+        }
     }
 
     /// Simple glob matching (* and ?).
@@ -642,6 +688,59 @@ mod tests {
     }
 
     #[test]
+    fn test_is_whitelisted_detection() {
+        use crate::core::types::{DetectionMethod, Severity, ThreatCategory};
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(b"flagged content").unwrap();
+        let detection = Detection::new(
+            file.path().to_path_buf(),
+            "Trojan.Test",
+            Severity::High,
+            ThreatCategory::Trojan,
+            DetectionMethod::Yara,
+        );
+
+        let manager = WhitelistManager::in_memory().unwrap();
+        assert!(!manager.is_whitelisted(&detection).unwrap());
+
+        // A hash entry matches the file's own hash even when the detection
+        // carries none, and regardless of hex case.
+        let hash = HashCalculator::sha256_file(file.path()).unwrap();
+        manager
+            .add(&WhitelistEntry::by_hash(
+                "h".to_string(),
+                hash.to_uppercase(),
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
+        manager.disable("h").unwrap();
+        assert!(!manager.is_whitelisted(&detection).unwrap());
+
+        manager
+            .add(&WhitelistEntry::by_detection(
+                "d".to_string(),
+                "trojan.*".to_string(),
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
+        manager.disable("d").unwrap();
+
+        let pattern = format!("{}*", file.path().parent().unwrap().display());
+        manager
+            .add(&WhitelistEntry::by_path(
+                "p".to_string(),
+                pattern,
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
+    }
+
+    #[test]
     fn test_whitelist_type_conversion() {
         assert_eq!(WhitelistType::Hash.to_db(), "hash");
         assert_eq!(WhitelistType::Path.to_db(), "path");
@@ -654,5 +753,43 @@ mod tests {
             Some(WhitelistType::Detection)
         );
         assert_eq!(WhitelistType::from_db("invalid"), None);
+    }
+
+    #[test]
+    fn test_read_only_whitelist_is_still_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("whitelist.db");
+        let hash = "ab".repeat(32);
+        WhitelistManager::open_writable(&db_path)
+            .unwrap()
+            .add(&WhitelistEntry::by_hash(
+                "1".to_string(),
+                hash.clone(),
+                "test".to_string(),
+            ))
+            .unwrap();
+
+        let mut perms = std::fs::metadata(&db_path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&db_path, perms.clone()).unwrap();
+        // Root (or an administrator) can write regardless; nothing to test
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(&db_path)
+            .is_err()
+        {
+            // Scans can still honour the entries...
+            let manager = WhitelistManager::open(&db_path).unwrap();
+            assert!(manager.is_hash_whitelisted(&hash).unwrap());
+            // ...but changing it is refused up front
+            let err = WhitelistManager::open_writable(&db_path)
+                .err()
+                .expect("refused");
+            assert!(matches!(err, Error::DatabaseReadOnly { .. }), "{}", err);
+        }
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        std::fs::set_permissions(&db_path, perms).unwrap();
     }
 }
