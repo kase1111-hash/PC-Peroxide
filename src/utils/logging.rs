@@ -166,8 +166,7 @@ pub fn init_logging(config: LogConfig) -> Result<()> {
             };
             let mut file_output = String::new();
             if config.timestamps {
-                file_output
-                    .push_str(&format!("{} ", Local::now().format("%Y-%m-%d %H:%M:%S")));
+                file_output.push_str(&format!("{} ", Local::now().format("%Y-%m-%d %H:%M:%S")));
             }
             file_output.push_str(&format!("[{}] ", level_plain));
             if config.module_path {

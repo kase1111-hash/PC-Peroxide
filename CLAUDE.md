@@ -83,8 +83,11 @@ cargo run -- scan --full
 # Scan specific path
 cargo run -- scan --path "/path/to/scan"
 
-# Export results as JSON
-cargo run -- scan --full --output report.json --json
+# Export results to a file (json, html, csv, pdf)
+cargo run -- scan --full --output report.json --export-format json
+
+# Print results as JSON to stdout
+cargo run -- --format json scan --quick
 ```
 
 ## Windows Batch Scripts
