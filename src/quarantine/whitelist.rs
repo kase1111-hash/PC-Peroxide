@@ -8,9 +8,11 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::error::{Error, Result};
+use crate::core::types::Detection;
+use crate::utils::hash::HashCalculator;
 
 /// Type of whitelist entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +99,11 @@ pub struct WhitelistManager {
 }
 
 impl WhitelistManager {
+    /// Default location of the whitelist database.
+    pub fn default_path() -> PathBuf {
+        super::get_quarantine_path().join("whitelist.db")
+    }
+
     /// Open or create the whitelist database.
     pub fn open(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
@@ -275,11 +282,11 @@ impl WhitelistManager {
         Ok(rows > 0)
     }
 
-    /// Check if a hash is whitelisted.
+    /// Check if a hash is whitelisted (case-insensitive).
     pub fn is_hash_whitelisted(&self, hash: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM whitelist
-             WHERE whitelist_type = 'hash' AND pattern = ?1 AND active = 1",
+             WHERE whitelist_type = 'hash' AND lower(pattern) = lower(?1) AND active = 1",
             [hash],
             |row| row.get(0),
         )?;
@@ -313,6 +320,32 @@ impl WhitelistManager {
         }
 
         Ok(false)
+    }
+
+    /// Check if any active entry suppresses a detection.
+    ///
+    /// Hash entries are compared against the detection's hash (for an archive,
+    /// the hash of the matching member) and against the hash of the file itself.
+    pub fn is_whitelisted(&self, detection: &Detection) -> Result<bool> {
+        if self.is_path_whitelisted(&detection.path)?
+            || self.is_detection_whitelisted(&detection.threat_name)?
+        {
+            return Ok(true);
+        }
+
+        if let Some(ref hash) = detection.sha256 {
+            if self.is_hash_whitelisted(hash)? {
+                return Ok(true);
+            }
+        }
+
+        if self.list_by_type(WhitelistType::Hash)?.is_empty() {
+            return Ok(false);
+        }
+        match HashCalculator::sha256_file(&detection.path) {
+            Ok(hash) => self.is_hash_whitelisted(&hash),
+            Err(_) => Ok(false),
+        }
     }
 
     /// Simple glob matching (* and ?).
@@ -639,6 +672,59 @@ mod tests {
         manager.disable("1").unwrap();
         assert_eq!(manager.count().unwrap(), 2);
         assert_eq!(manager.count_active().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_is_whitelisted_detection() {
+        use crate::core::types::{DetectionMethod, Severity, ThreatCategory};
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(b"flagged content").unwrap();
+        let detection = Detection::new(
+            file.path().to_path_buf(),
+            "Trojan.Test",
+            Severity::High,
+            ThreatCategory::Trojan,
+            DetectionMethod::Yara,
+        );
+
+        let manager = WhitelistManager::in_memory().unwrap();
+        assert!(!manager.is_whitelisted(&detection).unwrap());
+
+        // A hash entry matches the file's own hash even when the detection
+        // carries none, and regardless of hex case.
+        let hash = HashCalculator::sha256_file(file.path()).unwrap();
+        manager
+            .add(&WhitelistEntry::by_hash(
+                "h".to_string(),
+                hash.to_uppercase(),
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
+        manager.disable("h").unwrap();
+        assert!(!manager.is_whitelisted(&detection).unwrap());
+
+        manager
+            .add(&WhitelistEntry::by_detection(
+                "d".to_string(),
+                "trojan.*".to_string(),
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
+        manager.disable("d").unwrap();
+
+        let pattern = format!("{}*", file.path().parent().unwrap().display());
+        manager
+            .add(&WhitelistEntry::by_path(
+                "p".to_string(),
+                pattern,
+                "".to_string(),
+            ))
+            .unwrap();
+        assert!(manager.is_whitelisted(&detection).unwrap());
     }
 
     #[test]

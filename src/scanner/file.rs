@@ -4,6 +4,7 @@ use crate::core::config::Config;
 use crate::core::error::{Error, Result};
 use crate::core::types::{Detection, FilePriority, ScanStatus, ScanSummary, ScanType};
 use crate::detection::{DetectionEngine, SignatureDatabase};
+use crate::quarantine::WhitelistManager;
 use crate::scanner::archive::ArchiveScanner;
 use crate::scanner::progress::ProgressTracker;
 use crate::utils::hash::HashCalculator;
@@ -35,7 +36,7 @@ pub const QUICK_SCAN_PATHS: &[&str] = &["/tmp", "/var/tmp"];
 #[derive(Debug)]
 enum ScanResult {
     /// A threat was detected
-    Detection(Detection),
+    Detection { detection: Detection, size: u64 },
     /// An error occurred while scanning
     Error(String),
     /// A file was scanned successfully (no threat)
@@ -48,6 +49,7 @@ pub struct FileScanner {
     detection_engine: Option<Arc<DetectionEngine>>,
     cancelled: Arc<AtomicBool>,
     progress: Arc<ProgressTracker>,
+    whitelist_path: PathBuf,
 }
 
 impl FileScanner {
@@ -78,6 +80,7 @@ impl FileScanner {
             detection_engine,
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(ProgressTracker::new()),
+            whitelist_path: WhitelistManager::default_path(),
         }
     }
 
@@ -88,6 +91,53 @@ impl FileScanner {
             detection_engine: Some(Arc::new(engine)),
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(ProgressTracker::new()),
+            whitelist_path: WhitelistManager::default_path(),
+        }
+    }
+
+    /// Use a whitelist database other than the default one.
+    pub fn with_whitelist_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.whitelist_path = path.into();
+        self
+    }
+
+    /// Open the whitelist if the user has created one (scanning never creates it).
+    fn open_whitelist(&self) -> Option<WhitelistManager> {
+        if !self.whitelist_path.is_file() {
+            return None;
+        }
+        match WhitelistManager::open(&self.whitelist_path) {
+            Ok(manager) => Some(manager),
+            Err(e) => {
+                log::warn!(
+                    "Failed to open whitelist {}: {}",
+                    self.whitelist_path.display(),
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Check a detection against the whitelist, logging suppressed ones.
+    fn is_whitelisted(whitelist: Option<&WhitelistManager>, detection: &Detection) -> bool {
+        let Some(whitelist) = whitelist else {
+            return false;
+        };
+        match whitelist.is_whitelisted(detection) {
+            Ok(true) => {
+                log::info!(
+                    "Whitelisted, not reporting: {} in {:?}",
+                    detection.threat_name,
+                    detection.path
+                );
+                true
+            }
+            Ok(false) => false,
+            Err(e) => {
+                log::warn!("Whitelist check failed for {:?}: {}", detection.path, e);
+                false
+            }
         }
     }
 
@@ -223,24 +273,58 @@ impl FileScanner {
 
     /// Check if a path should be excluded from scanning.
     pub fn should_exclude(&self, path: &Path) -> bool {
-        let path_str = path.to_string_lossy();
-
         // Check excluded paths
         for excluded in &self.config.scan.exclude_paths {
-            if path_str.contains(excluded) {
+            if Self::path_matches_exclusion(path, excluded) {
                 return true;
             }
         }
 
-        // Check excluded extensions
+        // Check excluded extensions ("iso" and ".iso" are both accepted)
         if let Some(ext) = path.extension() {
-            let ext_lower = ext.to_string_lossy().to_lowercase();
-            if self.config.scan.exclude_extensions.contains(&ext_lower) {
+            let ext = ext.to_string_lossy();
+            if self
+                .config
+                .scan
+                .exclude_extensions
+                .iter()
+                .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(&ext))
+            {
                 return true;
             }
         }
 
         false
+    }
+
+    /// Match a path against an exclusion by whole path components.
+    ///
+    /// An absolute exclusion covers that directory tree; a relative one (such
+    /// as "node_modules") matches wherever it appears. "/proc" therefore
+    /// excludes "/proc/1/maps" but not "/home/user/process_dumps".
+    fn path_matches_exclusion(path: &Path, excluded: &str) -> bool {
+        // Windows paths are case-insensitive.
+        #[cfg(windows)]
+        let (path, excluded) = (
+            PathBuf::from(path.to_string_lossy().to_lowercase()),
+            excluded.to_lowercase(),
+        );
+        #[cfg(windows)]
+        let (path, excluded) = (path.as_path(), excluded.as_str());
+
+        let excluded = Path::new(excluded);
+        if excluded.is_absolute() {
+            return path.starts_with(excluded);
+        }
+
+        let wanted: Vec<_> = excluded.components().collect();
+        if wanted.is_empty() {
+            return false;
+        }
+        let components: Vec<_> = path.components().collect();
+        components
+            .windows(wanted.len())
+            .any(|window| window == wanted.as_slice())
     }
 
     /// Check if a file exceeds size limits.
@@ -265,13 +349,49 @@ impl FileScanner {
 
         let mut paths_to_scan = Vec::new();
         for path_pattern in QUICK_SCAN_PATHS {
-            let path = Self::expand_path(path_pattern);
-            if path.exists() {
-                paths_to_scan.push(path);
-            }
+            paths_to_scan.extend(Self::expand_wildcards(&Self::expand_path(path_pattern)));
         }
 
         self.scan_paths(paths_to_scan, ScanType::Quick).await
+    }
+
+    /// Expand `*` path components (as in `C:\Users\*\Downloads`) into the
+    /// existing directories they match.
+    fn expand_wildcards(pattern: &Path) -> Vec<PathBuf> {
+        let mut matches = vec![PathBuf::new()];
+        for component in pattern.components() {
+            if component.as_os_str() == "*" {
+                matches = matches
+                    .iter()
+                    .filter_map(|dir| std::fs::read_dir(dir).ok())
+                    .flatten()
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_dir())
+                    .collect();
+            } else {
+                for path in &mut matches {
+                    path.push(component);
+                }
+            }
+        }
+        matches.retain(|path| path.exists());
+        matches
+    }
+
+    /// Drop duplicate roots and roots inside another root, which would
+    /// otherwise have their files scanned and reported twice (for example
+    /// %TEMP% lives inside %LOCALAPPDATA%).
+    fn dedupe_roots(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        paths.sort();
+        paths.dedup();
+        let roots = paths.clone();
+        paths.retain(|path| {
+            !roots
+                .iter()
+                .any(|root| root != path && path.starts_with(root))
+        });
+        paths
     }
 
     /// Perform a full system scan.
@@ -296,6 +416,12 @@ impl FileScanner {
     pub async fn custom_scan(&self, paths: Vec<PathBuf>) -> Result<ScanSummary> {
         log::info!("Starting custom scan of {} paths", paths.len());
         self.reset();
+
+        // A mistyped path must not produce a "clean" result.
+        if let Some(missing) = paths.iter().find(|p| !p.exists()) {
+            return Err(Error::PathNotFound(missing.clone()));
+        }
+
         self.scan_paths(paths, ScanType::Custom).await
     }
 
@@ -303,6 +429,7 @@ impl FileScanner {
     async fn scan_paths(&self, paths: Vec<PathBuf>, scan_type: ScanType) -> Result<ScanSummary> {
         let mut summary = ScanSummary::new(scan_type);
         summary.status = ScanStatus::Running;
+        let paths = Self::dedupe_roots(paths);
 
         // Collect all files to scan
         let file_queue = Arc::new(Mutex::new(VecDeque::new()));
@@ -371,7 +498,7 @@ impl FileScanner {
 
                     match result {
                         Ok(Some(detection)) => {
-                            let _ = tx.send(ScanResult::Detection(detection)).await;
+                            let _ = tx.send(ScanResult::Detection { detection, size }).await;
                         }
                         Ok(None) => {
                             let _ = tx.send(ScanResult::FileScanned { size }).await;
@@ -389,10 +516,20 @@ impl FileScanner {
         // Drop the sender so the channel closes when workers finish
         drop(tx);
 
+        let whitelist = self.open_whitelist();
+
         // Collect results
         while let Some(result) = rx.recv().await {
             match result {
-                ScanResult::Detection(detection) => {
+                ScanResult::Detection { detection, size } => {
+                    summary.files_scanned += 1;
+                    summary.bytes_scanned += size;
+                    self.progress.increment_files();
+                    self.progress.add_bytes(size);
+
+                    if Self::is_whitelisted(whitelist.as_ref(), &detection) {
+                        continue;
+                    }
                     log::info!(
                         "Threat detected: {} in {:?}",
                         detection.threat_name,
@@ -508,9 +645,7 @@ impl FileScanner {
 
             // Also scan archive contents if enabled, even if the archive itself was detected
             if config.scan.scan_archives && ArchiveScanner::is_supported_archive(path) {
-                if let Ok(Some(archive_detection)) =
-                    Self::scan_archive_sync(path, engine, config)
-                {
+                if let Ok(Some(archive_detection)) = Self::scan_archive_sync(path, engine, config) {
                     // Prefer archive detection if it has higher severity, or if
                     // the outer file had no detection
                     match &detection {
@@ -577,7 +712,9 @@ impl FileScanner {
         }
 
         let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-        Self::scan_file_sync(path, size, self.detection_engine.as_ref(), &self.config)
+        let detection =
+            Self::scan_file_sync(path, size, self.detection_engine.as_ref(), &self.config)?;
+        Ok(detection.filter(|d| !Self::is_whitelisted(self.open_whitelist().as_ref(), d)))
     }
 }
 
@@ -617,6 +754,155 @@ mod tests {
             let path = FileScanner::expand_path("/tmp");
             assert_eq!(path, PathBuf::from("/tmp"));
         }
+    }
+
+    const EICAR: &[u8] = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+
+    /// A scanner backed by a throwaway signature database and whitelist.
+    fn test_scanner(dir: &Path) -> FileScanner {
+        let db = SignatureDatabase::open(&dir.join("sigs.db")).unwrap();
+        let engine = DetectionEngine::new(Arc::new(db));
+        FileScanner::with_detection_engine(Arc::new(Config::default()), engine)
+            .with_whitelist_path(dir.join("whitelist.db"))
+    }
+
+    #[tokio::test]
+    async fn test_detected_files_count_as_scanned() {
+        let state = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("eicar.com"), EICAR).unwrap();
+        std::fs::write(target.path().join("clean.txt"), b"hello").unwrap();
+
+        let summary = test_scanner(state.path())
+            .custom_scan(vec![target.path().to_path_buf()])
+            .await
+            .unwrap();
+
+        assert_eq!(summary.threats_found, 1);
+        assert_eq!(summary.files_scanned, 2);
+        assert_eq!(summary.bytes_scanned, EICAR.len() as u64 + 5);
+    }
+
+    #[tokio::test]
+    async fn test_whitelist_suppresses_detection() {
+        use crate::quarantine::WhitelistEntry;
+
+        let state = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let eicar = target.path().join("eicar.com");
+        std::fs::write(&eicar, EICAR).unwrap();
+
+        let scanner = test_scanner(state.path());
+        let summary = scanner
+            .custom_scan(vec![target.path().to_path_buf()])
+            .await
+            .unwrap();
+        assert_eq!(summary.threats_found, 1);
+
+        WhitelistManager::open(&state.path().join("whitelist.db"))
+            .unwrap()
+            .add(&WhitelistEntry::by_path(
+                "1".to_string(),
+                eicar.display().to_string(),
+                "test".to_string(),
+            ))
+            .unwrap();
+
+        let summary = scanner
+            .custom_scan(vec![target.path().to_path_buf()])
+            .await
+            .unwrap();
+        assert_eq!(summary.threats_found, 0);
+        assert_eq!(summary.files_scanned, 1);
+        assert!(scanner.scan_file(&eicar).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_custom_scan_missing_path_is_error() {
+        let state = tempfile::tempdir().unwrap();
+        let missing = state.path().join("does-not-exist");
+
+        let result = test_scanner(state.path())
+            .custom_scan(vec![state.path().to_path_buf(), missing.clone()])
+            .await;
+
+        assert!(matches!(result, Err(Error::PathNotFound(p)) if p == missing));
+    }
+
+    #[test]
+    fn test_scan_future_is_send() {
+        fn assert_send<T: Send>(_: &T) {}
+        let state = tempfile::tempdir().unwrap();
+        let scanner = test_scanner(state.path());
+        assert_send(&scanner.custom_scan(Vec::new()));
+    }
+
+    #[test]
+    fn test_exclusions_match_whole_components() {
+        let mut config = Config::default();
+        config.scan.exclude_paths = vec!["/proc".to_string(), "node_modules".to_string()];
+        config.scan.exclude_extensions = vec!["iso".to_string(), ".VMDK".to_string()];
+        let state = tempfile::tempdir().unwrap();
+        let db = SignatureDatabase::open(&state.path().join("sigs.db")).unwrap();
+        let scanner = FileScanner::with_detection_engine(
+            Arc::new(config),
+            DetectionEngine::new(Arc::new(db)),
+        );
+
+        assert!(scanner.should_exclude(Path::new("/proc")));
+        assert!(scanner.should_exclude(Path::new("/proc/1/maps")));
+        assert!(!scanner.should_exclude(Path::new("/home/user/process_dumps/a.exe")));
+        assert!(!scanner.should_exclude(Path::new("/srv/proc/a.exe")));
+
+        assert!(scanner.should_exclude(Path::new("/app/node_modules/x/index.js")));
+        assert!(!scanner.should_exclude(Path::new("/app/node_modules_backup/a.exe")));
+
+        assert!(scanner.should_exclude(Path::new("/data/disk.iso")));
+        assert!(scanner.should_exclude(Path::new("/data/disk.vmdk")));
+        assert!(!scanner.should_exclude(Path::new("/data/disk.exe")));
+    }
+
+    #[test]
+    fn test_expand_wildcards() {
+        let root = tempfile::tempdir().unwrap();
+        for user in ["alice", "bob", "carol"] {
+            std::fs::create_dir(root.path().join(user)).unwrap();
+        }
+        std::fs::create_dir(root.path().join("alice/Downloads")).unwrap();
+        std::fs::create_dir(root.path().join("bob/Downloads")).unwrap();
+
+        let mut found = FileScanner::expand_wildcards(&root.path().join("*").join("Downloads"));
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                root.path().join("alice/Downloads"),
+                root.path().join("bob/Downloads")
+            ]
+        );
+
+        assert_eq!(
+            FileScanner::expand_wildcards(root.path()),
+            [root.path().to_path_buf()]
+        );
+        assert!(FileScanner::expand_wildcards(&root.path().join("missing")).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_nested_paths_scanned_once() {
+        let state = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let sub = target.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("eicar.com"), EICAR).unwrap();
+
+        let summary = test_scanner(state.path())
+            .custom_scan(vec![sub.clone(), target.path().to_path_buf(), sub])
+            .await
+            .unwrap();
+
+        assert_eq!(summary.threats_found, 1);
+        assert_eq!(summary.files_scanned, 1);
     }
 
     #[test]
