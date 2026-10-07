@@ -227,9 +227,9 @@ impl SecureOperations {
 
     /// Remove readonly attribute from a file.
     #[cfg(target_os = "windows")]
+    // On Windows this only clears FILE_ATTRIBUTE_READONLY; the lint is about Unix modes.
+    #[allow(clippy::permissions_set_readonly_false)]
     pub fn remove_readonly(&self, path: &Path) -> Result<()> {
-        use std::os::windows::fs::OpenOptionsExt;
-
         let mut perms = fs::metadata(path)
             .map_err(|e| Error::file_read(path, e))?
             .permissions();

@@ -260,9 +260,6 @@ impl RegistryScanner {
         #[cfg(target_os = "windows")]
         {
             let mut entries = Vec::new();
-            use winreg::enums::*;
-            use winreg::RegKey;
-
             for (path, description) in AUTORUN_PATHS {
                 if let Some(entry) =
                     self.scan_registry_key(path, description, PersistenceType::RegistryRun)
@@ -813,12 +810,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_scan_all_non_windows() {
         let scanner = RegistryScanner::new();
         // Should return empty results on non-Windows
         let entries = scanner.scan_all().unwrap();
-
-        #[cfg(not(target_os = "windows"))]
         assert!(entries.is_empty());
     }
 }

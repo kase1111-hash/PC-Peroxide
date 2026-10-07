@@ -433,6 +433,7 @@ impl ConnectionScanner {
     /// Parse netstat output on Windows.
     #[cfg(target_os = "windows")]
     fn parse_netstat_windows(&self) -> Result<Vec<Connection>> {
+        use crate::core::error::Error;
         use std::process::Command;
 
         let output = Command::new("netstat")
@@ -529,6 +530,7 @@ impl ConnectionScanner {
     /// Parse netstat output on macOS.
     #[cfg(target_os = "macos")]
     fn parse_netstat_macos(&self) -> Result<Vec<Connection>> {
+        use crate::core::error::Error;
         use std::process::Command;
 
         let output = Command::new("netstat")
