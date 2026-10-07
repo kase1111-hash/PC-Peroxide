@@ -110,6 +110,16 @@ impl Config {
             });
         }
 
+        if let Some(ref path) = self.quarantine.vault_path {
+            let blank = path.as_os_str().to_string_lossy().trim().is_empty();
+            if !blank && !path.is_absolute() {
+                return Err(Error::ConfigInvalid {
+                    field: "quarantine.vault_path".to_string(),
+                    message: "Must be an absolute path".to_string(),
+                });
+            }
+        }
+
         if self.logging.keep_logs_days == 0 {
             return Err(Error::ConfigInvalid {
                 field: "logging.keep_logs_days".to_string(),
@@ -336,8 +346,11 @@ impl QuarantineConfig {
     /// Get the effective quarantine vault directory: `vault_path` if set,
     /// otherwise the platform default where the vault has always lived.
     pub fn quarantine_dir(&self) -> PathBuf {
+        // An empty path (e.g. from `config set quarantine.vault_path ""`)
+        // means "unset", not the current directory.
         self.vault_path
             .clone()
+            .filter(|p| !p.as_os_str().to_string_lossy().trim().is_empty())
             .unwrap_or_else(crate::quarantine::get_quarantine_path)
     }
 }
@@ -434,8 +447,27 @@ mod tests {
             config.quarantine_dir(),
             crate::quarantine::get_quarantine_path()
         );
-        config.vault_path = Some(PathBuf::from("/custom/vault"));
-        assert_eq!(config.quarantine_dir(), PathBuf::from("/custom/vault"));
+        let custom = std::env::temp_dir().join("custom-vault");
+        config.vault_path = Some(custom.clone());
+        assert_eq!(config.quarantine_dir(), custom);
+
+        // Blank means unset, not the current directory
+        config.vault_path = Some(PathBuf::from(""));
+        assert_eq!(
+            config.quarantine_dir(),
+            crate::quarantine::get_quarantine_path()
+        );
+    }
+
+    #[test]
+    fn test_relative_vault_path_rejected() {
+        let mut config = Config::default();
+        config.quarantine.vault_path = Some(PathBuf::from("relative/vault"));
+        assert!(config.validate().is_err());
+        config.quarantine.vault_path = Some(PathBuf::from(""));
+        assert!(config.validate().is_ok());
+        config.quarantine.vault_path = Some(std::env::temp_dir().join("vault"));
+        assert!(config.validate().is_ok());
     }
 
     #[test]

@@ -59,11 +59,17 @@ impl ScanProgress {
         }
     }
 
+    /// Files finished so far, including those that failed to scan.
+    pub fn files_processed(&self) -> u64 {
+        self.files_scanned + u64::from(self.errors)
+    }
+
     /// Estimate remaining time based on progress.
     pub fn estimated_remaining(&self) -> Option<Duration> {
         if let Some(total) = self.total_files {
-            if self.files_scanned > 0 && self.files_scanned < total {
-                let remaining_files = total - self.files_scanned;
+            let processed = self.files_processed();
+            if processed > 0 && processed < total {
+                let remaining_files = total - processed;
                 let rate = self.files_per_second();
                 if rate > 0.0 {
                     let remaining_secs = remaining_files as f64 / rate;
@@ -74,11 +80,12 @@ impl ScanProgress {
         None
     }
 
-    /// Calculate completion percentage.
+    /// Calculate completion percentage. Files that failed to scan count as
+    /// done, so a finished scan reaches 100%.
     pub fn percentage(&self) -> Option<f64> {
         self.total_files.map(|total| {
             if total > 0 {
-                (self.files_scanned as f64 / total as f64) * 100.0
+                (self.files_processed().min(total) as f64 / total as f64) * 100.0
             } else {
                 100.0
             }
@@ -466,6 +473,15 @@ mod tests {
         assert!((progress.files_per_second() - 10.0).abs() < 1.0);
         assert_eq!(progress.percentage(), Some(50.0));
         assert!((progress.recent_rate - 10.0).abs() < 0.1);
+
+        // Files that failed to scan still count towards completion
+        let finished = ScanProgress {
+            files_scanned: 190,
+            errors: 10,
+            ..progress
+        };
+        assert_eq!(finished.percentage(), Some(100.0));
+        assert_eq!(finished.estimated_remaining(), None);
     }
 
     #[test]
