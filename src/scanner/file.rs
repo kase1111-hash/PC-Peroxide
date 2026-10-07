@@ -56,6 +56,10 @@ pub struct FileScanner {
     /// The quarantine vault, never scanned (its files are encrypted
     /// malware and could match patterns)
     vault_dir: PathBuf,
+    /// This program's executable; it and its sibling PC-Peroxide binaries
+    /// contain the detection patterns as plain text and would flag
+    /// themselves
+    own_exe: Option<PathBuf>,
     detection_callback: Option<DetectionCallback>,
 }
 
@@ -84,6 +88,7 @@ impl FileScanner {
 
         Self {
             vault_dir: config.quarantine.quarantine_dir(),
+            own_exe: std::env::current_exe().ok(),
             config,
             detection_engine,
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -97,6 +102,7 @@ impl FileScanner {
     pub fn with_detection_engine(config: Arc<Config>, engine: DetectionEngine) -> Self {
         Self {
             vault_dir: config.quarantine.quarantine_dir(),
+            own_exe: std::env::current_exe().ok(),
             config,
             detection_engine: Some(Arc::new(engine)),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -292,8 +298,13 @@ impl FileScanner {
 
     /// Check if a path should be excluded from scanning.
     pub fn should_exclude(&self, path: &Path) -> bool {
-        if path.starts_with(&self.vault_dir) {
+        if Self::path_matches_exclusion(path, &self.vault_dir.to_string_lossy()) {
             return true;
+        }
+        if let Some(ref exe) = self.own_exe {
+            if Self::is_own_binary(path, exe) {
+                return true;
+            }
         }
 
         // Check excluded paths
@@ -318,6 +329,26 @@ impl FileScanner {
         }
 
         false
+    }
+
+    /// Whether `path` is the running executable or a PC-Peroxide binary next
+    /// to it (e.g. the GUI beside the CLI).
+    fn is_own_binary(path: &Path, exe: &Path) -> bool {
+        // Compare components, so "C:/x" and "C:\x" match, case-insensitively
+        let lower = |p: &Path| -> Vec<String> {
+            p.components()
+                .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+                .collect()
+        };
+        let same_dir = match (path.parent(), exe.parent()) {
+            (Some(a), Some(b)) => lower(a) == lower(b),
+            _ => false,
+        };
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        lower(path) == lower(exe) || (same_dir && name.starts_with("pc-peroxide"))
     }
 
     /// Match a path against an exclusion by whole path components.
@@ -405,16 +436,36 @@ impl FileScanner {
     /// Drop duplicate roots and roots inside another root, which would
     /// otherwise have their files scanned and reported twice (for example
     /// %TEMP% lives inside %LOCALAPPDATA%).
-    fn dedupe_roots(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
-        paths.sort();
-        paths.dedup();
-        let roots = paths.clone();
-        paths.retain(|path| {
-            !roots
-                .iter()
-                .any(|root| root != path && path.starts_with(root))
-        });
-        paths
+    fn dedupe_roots(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut keyed: Vec<(PathBuf, PathBuf)> = paths
+            .into_iter()
+            .map(|path| (Self::root_key(&path), path))
+            .collect();
+        keyed.sort();
+        keyed.dedup_by(|a, b| a.0 == b.0);
+        let keys: Vec<PathBuf> = keyed.iter().map(|(key, _)| key.clone()).collect();
+        keyed
+            .into_iter()
+            .filter(|(key, _)| !keys.iter().any(|root| root != key && key.starts_with(root)))
+            .map(|(_, path)| path)
+            .collect()
+    }
+
+    /// Key for comparing scan roots. On Windows, paths are case-insensitive
+    /// and %TEMP% is often given in 8.3 short form (`C:\Users\ADMINI~1\...`),
+    /// so compare the canonical long form, lowercased.
+    #[cfg(windows)]
+    fn root_key(path: &Path) -> PathBuf {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let text = canonical.to_string_lossy();
+        let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+        PathBuf::from(text.to_lowercase())
+    }
+
+    /// Key for comparing scan roots.
+    #[cfg(not(windows))]
+    fn root_key(path: &Path) -> PathBuf {
+        path.to_path_buf()
     }
 
     /// Perform a full system scan.
@@ -463,6 +514,12 @@ impl FileScanner {
             }
 
             if path.is_file() {
+                // Exclusions (the vault, PC-Peroxide's own binaries, user
+                // rules) apply to files named directly too
+                if self.should_exclude(path) {
+                    log::info!("Skipping excluded file {}", path.display());
+                    continue;
+                }
                 if let Ok(metadata) = path.metadata() {
                     file_queue
                         .lock()
@@ -982,6 +1039,24 @@ mod tests {
             .unwrap();
         assert_eq!(summary.threats_found, 1);
         assert_eq!(summary.detections[0].path, target.path().join("eicar.com"));
+    }
+
+    #[test]
+    fn test_own_binaries_are_recognized() {
+        let exe = Path::new("/opt/pc-peroxide/pc-peroxide");
+        assert!(FileScanner::is_own_binary(exe, exe));
+        assert!(FileScanner::is_own_binary(
+            Path::new("/opt/pc-peroxide/pc-peroxide-gui"),
+            exe
+        ));
+        assert!(!FileScanner::is_own_binary(
+            Path::new("/opt/pc-peroxide/other.exe"),
+            exe
+        ));
+        assert!(!FileScanner::is_own_binary(
+            Path::new("/home/user/Downloads/pc-peroxide-gui"),
+            exe
+        ));
     }
 
     #[test]
