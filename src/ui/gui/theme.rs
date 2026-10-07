@@ -67,17 +67,19 @@ impl Theme {
         visuals.dark_mode = self.background.r() < 128;
         visuals.override_text_color = Some(self.text_primary);
         visuals.widgets.noninteractive.bg_fill = self.surface;
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, self.border);
-        visuals.widgets.inactive.bg_fill = self.surface;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, self.border);
+        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, self.border);
+        // Slider rails and checkbox backgrounds; must differ from `surface`,
+        // the fill of the panels they sit on, or they are invisible.
+        visuals.widgets.inactive.bg_fill = self.border;
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, self.border);
         visuals.widgets.hovered.bg_fill = self.primary.linear_multiply(0.2);
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, self.primary);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, self.primary);
         visuals.widgets.active.bg_fill = self.primary;
-        visuals.widgets.active.bg_stroke = Stroke::new(1.0, self.primary);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, self.primary);
         visuals.selection.bg_fill = self.primary.linear_multiply(0.4);
-        visuals.selection.stroke = Stroke::new(1.0, self.primary);
+        visuals.selection.stroke = Stroke::new(1.0_f32, self.primary);
         visuals.window_fill = self.surface;
-        visuals.window_stroke = Stroke::new(1.0, self.border);
+        visuals.window_stroke = Stroke::new(1.0_f32, self.border);
         visuals.panel_fill = self.background;
         visuals.window_rounding = Rounding::same(8.0);
         visuals.menu_rounding = Rounding::same(4.0);

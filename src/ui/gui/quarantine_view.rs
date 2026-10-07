@@ -1,11 +1,10 @@
 //! Quarantine management view component.
 
-#[cfg(feature = "gui")]
 use eframe::egui::{self, Color32, RichText, Rounding, Ui, Vec2};
 
 use super::app::QuarantineAction;
 use super::theme::Theme;
-use crate::quarantine::QuarantineEntry;
+use crate::quarantine::QuarantineItem;
 
 /// Quarantine view state.
 pub struct QuarantineView {
@@ -18,6 +17,8 @@ pub struct QuarantineView {
     confirm_delete: Option<String>,
     /// Show clear all confirmation
     confirm_clear: bool,
+    /// Whether a vault operation is running (actions are disabled)
+    busy: bool,
 }
 
 impl QuarantineView {
@@ -29,31 +30,65 @@ impl QuarantineView {
             selected_item: None,
             confirm_delete: None,
             confirm_clear: false,
+            busy: false,
         }
     }
 
+    /// Use a different theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     /// Render the quarantine view.
-    pub fn render(&mut self, ui: &mut Ui, items: &[QuarantineEntry]) -> Option<QuarantineAction> {
+    ///
+    /// `error` is shown when the vault could not be read; `busy` disables
+    /// actions while a vault operation runs.
+    pub fn render(
+        &mut self,
+        ui: &mut Ui,
+        items: &[QuarantineItem],
+        error: Option<&str>,
+        busy: bool,
+    ) -> Option<QuarantineAction> {
         let mut action = None;
+        self.busy = busy;
 
         ui.vertical(|ui| {
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
                 ui.label(self.theme.heading("Quarantine"));
+                ui.add_space(20.0);
+                if ui.button("Refresh").clicked() {
+                    action = Some(QuarantineAction::Refresh);
+                }
             });
             ui.add_space(20.0);
 
+            if let Some(error) = error {
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.colored_label(self.theme.danger, error);
+                });
+                ui.add_space(10.0);
+            }
+
             // Summary
-            action = self.render_summary(ui, items).or(action);
+            if let Some(a) = self.render_summary(ui, items) {
+                action = Some(a);
+            }
             ui.add_space(20.0);
 
             // Items list
-            action = self.render_items(ui, items).or(action);
+            if let Some(a) = self.render_items(ui, items) {
+                action = Some(a);
+            }
         });
 
         // Confirmations
-        action = self.render_confirmations(ui).or(action);
+        if let Some(a) = self.render_confirmations(ui) {
+            action = Some(a);
+        }
 
         action
     }
@@ -62,7 +97,7 @@ impl QuarantineView {
     fn render_summary(
         &mut self,
         ui: &mut Ui,
-        items: &[QuarantineEntry],
+        items: &[QuarantineItem],
     ) -> Option<QuarantineAction> {
         ui.horizontal(|ui| {
             ui.add_space(20.0);
@@ -112,7 +147,8 @@ impl QuarantineView {
             if !items.is_empty() {
                 ui.vertical(|ui| {
                     if ui
-                        .add(
+                        .add_enabled(
+                            !self.busy,
                             egui::Button::new(RichText::new("Clear All").color(Color32::WHITE))
                                 .fill(self.theme.danger)
                                 .min_size(Vec2::new(120.0, 36.0)),
@@ -129,7 +165,7 @@ impl QuarantineView {
     }
 
     /// Render quarantine items list.
-    fn render_items(&mut self, ui: &mut Ui, items: &[QuarantineEntry]) -> Option<QuarantineAction> {
+    fn render_items(&mut self, ui: &mut Ui, items: &[QuarantineItem]) -> Option<QuarantineAction> {
         let mut action = None;
 
         ui.horizontal(|ui| {
@@ -144,90 +180,80 @@ impl QuarantineView {
 
         ui.add_space(10.0);
 
-        ui.horizontal(|ui| {
-            ui.add_space(20.0);
-
+        ui.indent("quarantine_view_1", |ui| {
             egui::Frame::none()
                 .fill(self.theme.surface)
                 .rounding(Rounding::same(8.0))
                 .inner_margin(10.0)
                 .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width() - 40.0);
+                    ui.vertical(|ui| {
+                        ui.set_min_width(ui.available_width() - 40.0);
 
-                    // Filter items
-                    let filtered: Vec<_> = items
-                        .iter()
-                        .filter(|item| {
-                            if self.search_filter.is_empty() {
-                                return true;
-                            }
-                            let search = self.search_filter.to_lowercase();
-                            item.original_path
-                                .display()
-                                .to_string()
-                                .to_lowercase()
-                                .contains(&search)
-                                || item.threat_name.to_lowercase().contains(&search)
-                        })
-                        .collect();
+                        // Filter items
+                        let filtered: Vec<_> = items
+                            .iter()
+                            .filter(|item| {
+                                if self.search_filter.is_empty() {
+                                    return true;
+                                }
+                                let search = self.search_filter.to_lowercase();
+                                item.original_path
+                                    .display()
+                                    .to_string()
+                                    .to_lowercase()
+                                    .contains(&search)
+                                    || item.detection_name.to_lowercase().contains(&search)
+                            })
+                            .collect();
 
-                    if filtered.is_empty() {
-                        ui.vertical_centered(|ui| {
-                            ui.add_space(40.0);
-                            if items.is_empty() {
-                                ui.label(
-                                    RichText::new("No quarantined items")
-                                        .size(18.0)
-                                        .color(self.theme.success),
-                                );
-                                ui.label(self.theme.subheading(
-                                    "Threats will appear here after being quarantined.",
-                                ));
-                            } else {
-                                ui.label(self.theme.subheading("No items match your search."));
-                            }
-                            ui.add_space(40.0);
-                        });
-                    } else {
-                        egui::ScrollArea::vertical()
-                            .max_height(400.0)
-                            .show(ui, |ui| {
-                                // Header
-                                ui.horizontal(|ui| {
-                                    ui.allocate_ui(Vec2::new(200.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("THREAT"));
-                                    });
-                                    ui.allocate_ui(Vec2::new(250.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("ORIGINAL PATH"));
-                                    });
-                                    ui.allocate_ui(Vec2::new(100.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("DATE"));
-                                    });
-                                    ui.allocate_ui(Vec2::new(80.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("SIZE"));
-                                    });
-                                    ui.label(self.theme.label("ACTIONS"));
-                                });
-                                ui.separator();
+                        if filtered.is_empty() {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(40.0);
+                                if items.is_empty() {
+                                    ui.label(
+                                        RichText::new("No quarantined items")
+                                            .size(18.0)
+                                            .color(self.theme.success),
+                                    );
+                                    ui.label(self.theme.subheading(
+                                        "Threats will appear here after being quarantined.",
+                                    ));
+                                } else {
+                                    ui.label(self.theme.subheading("No items match your search."));
+                                }
+                                ui.add_space(40.0);
+                            });
+                        } else {
+                            egui::ScrollArea::vertical()
+                                .max_height(400.0)
+                                .show(ui, |ui| {
+                                    // A grid keeps the columns aligned
+                                    egui::Grid::new("quarantine_table")
+                                        .num_columns(5)
+                                        .striped(true)
+                                        .spacing([16.0, 6.0])
+                                        .show(ui, |ui| {
+                                            for header in [
+                                                "THREAT",
+                                                "ORIGINAL PATH",
+                                                "DATE",
+                                                "SIZE",
+                                                "ACTIONS",
+                                            ] {
+                                                ui.label(self.theme.label(header));
+                                            }
+                                            ui.end_row();
 
-                                // Rows
-                                for item in filtered {
-                                    let is_selected = self.selected_item.as_ref() == Some(&item.id);
-                                    let bg_color = if is_selected {
-                                        self.theme.primary.linear_multiply(0.2)
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    };
+                                            for item in filtered {
+                                                let is_selected =
+                                                    self.selected_item.as_ref() == Some(&item.id);
 
-                                    egui::Frame::none().fill(bg_color).show(ui, |ui| {
-                                        ui.horizontal(|ui| {
-                                            // Threat name
-                                            ui.allocate_ui(Vec2::new(200.0, 25.0), |ui| {
                                                 if ui
                                                     .selectable_label(
                                                         is_selected,
-                                                        &item.threat_name,
+                                                        &item.detection_name,
                                                     )
+                                                    .on_hover_text("Show details")
                                                     .clicked()
                                                 {
                                                     self.selected_item = if is_selected {
@@ -236,71 +262,60 @@ impl QuarantineView {
                                                         Some(item.id.clone())
                                                     };
                                                 }
-                                            });
 
-                                            // Original path
-                                            ui.allocate_ui(Vec2::new(250.0, 25.0), |ui| {
+                                                let path = item.original_path.display().to_string();
                                                 ui.label(
-                                                    RichText::new(truncate_path(
-                                                        &item.original_path.display().to_string(),
-                                                        35,
-                                                    ))
-                                                    .monospace()
-                                                    .size(11.0),
+                                                    RichText::new(truncate_path(&path, 50))
+                                                        .monospace()
+                                                        .size(11.0),
                                                 )
-                                                .on_hover_text(
-                                                    item.original_path.display().to_string(),
-                                                );
-                                            });
+                                                .on_hover_text(&path);
 
-                                            // Date
-                                            ui.allocate_ui(Vec2::new(100.0, 25.0), |ui| {
                                                 ui.label(
-                                                    item.quarantine_date
+                                                    item.quarantine_time
+                                                        .with_timezone(&chrono::Local)
                                                         .format("%Y-%m-%d")
                                                         .to_string(),
                                                 );
-                                            });
-
-                                            // Size
-                                            ui.allocate_ui(Vec2::new(80.0, 25.0), |ui| {
                                                 ui.label(format_size(item.original_size));
-                                            });
 
-                                            // Actions
-                                            if ui
-                                                .add(
-                                                    egui::Button::new("Restore")
-                                                        .min_size(Vec2::new(60.0, 24.0)),
-                                                )
-                                                .on_hover_text("Restore file to original location")
-                                                .clicked()
-                                            {
-                                                action = Some(QuarantineAction::Restore(
-                                                    item.id.clone(),
-                                                ));
-                                            }
-
-                                            ui.add_space(5.0);
-
-                                            if ui
-                                                .add(
-                                                    egui::Button::new(
-                                                        RichText::new("Delete")
-                                                            .color(self.theme.danger),
-                                                    )
-                                                    .min_size(Vec2::new(60.0, 24.0)),
-                                                )
-                                                .on_hover_text("Permanently delete this file")
-                                                .clicked()
-                                            {
-                                                self.confirm_delete = Some(item.id.clone());
+                                                ui.horizontal(|ui| {
+                                                    if ui
+                                                        .add_enabled(
+                                                            !self.busy && item.restorable,
+                                                            egui::Button::new("Restore"),
+                                                        )
+                                                        .on_hover_text(
+                                                            "Restore file to original location",
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        action = Some(QuarantineAction::Restore(
+                                                            item.id.clone(),
+                                                        ));
+                                                    }
+                                                    if ui
+                                                        .add_enabled(
+                                                            !self.busy,
+                                                            egui::Button::new(
+                                                                RichText::new("Delete")
+                                                                    .color(self.theme.danger),
+                                                            ),
+                                                        )
+                                                        .on_hover_text(
+                                                            "Permanently delete this file",
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        self.confirm_delete = Some(item.id.clone());
+                                                    }
+                                                });
+                                                ui.end_row();
                                             }
                                         });
-                                    });
-                                }
-                            });
-                    }
+                                });
+                        }
+                    });
                 });
         });
 
@@ -308,8 +323,7 @@ impl QuarantineView {
         if let Some(ref id) = self.selected_item {
             if let Some(item) = items.iter().find(|i| &i.id == id) {
                 ui.add_space(20.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
+                ui.indent("quarantine_view_2", |ui| {
                     self.render_item_detail(ui, item);
                 });
             }
@@ -319,7 +333,7 @@ impl QuarantineView {
     }
 
     /// Render item details.
-    fn render_item_detail(&self, ui: &mut Ui, item: &QuarantineEntry) {
+    fn render_item_detail(&self, ui: &mut Ui, item: &QuarantineItem) {
         egui::Frame::none()
             .fill(self.theme.surface)
             .rounding(Rounding::same(8.0))
@@ -339,7 +353,7 @@ impl QuarantineView {
                         ui.end_row();
 
                         ui.label(self.theme.label("Threat Name:"));
-                        ui.label(&item.threat_name);
+                        ui.label(&item.detection_name);
                         ui.end_row();
 
                         ui.label(self.theme.label("Original Path:"));
@@ -355,16 +369,25 @@ impl QuarantineView {
                         ui.end_row();
 
                         ui.label(self.theme.label("Quarantine Date:"));
-                        ui.label(item.quarantine_date.format("%Y-%m-%d %H:%M:%S").to_string());
+                        ui.label(
+                            item.quarantine_time
+                                .with_timezone(&chrono::Local)
+                                .format("%Y-%m-%d %H:%M:%S")
+                                .to_string(),
+                        );
                         ui.end_row();
 
                         ui.label(self.theme.label("SHA-256:"));
-                        ui.label(RichText::new(&item.original_hash).monospace().size(10.0));
+                        ui.label(RichText::new(&item.hash_sha256).monospace().size(10.0));
                         ui.end_row();
 
-                        if !item.reason.is_empty() {
-                            ui.label(self.theme.label("Reason:"));
-                            ui.label(&item.reason);
+                        ui.label(self.theme.label("Category:"));
+                        ui.label(&item.category);
+                        ui.end_row();
+
+                        if let Some(ref notes) = item.notes {
+                            ui.label(self.theme.label("Notes:"));
+                            ui.label(notes);
                             ui.end_row();
                         }
                     });
@@ -470,13 +493,9 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Truncate a path for display.
+/// Truncate a path for display, keeping its end.
 fn truncate_path(path: &str, max_len: usize) -> String {
-    if path.len() <= max_len {
-        path.to_string()
-    } else {
-        format!("...{}", &path[path.len() - max_len + 3..])
-    }
+    super::truncate_start(path, max_len)
 }
 
 #[cfg(test)]

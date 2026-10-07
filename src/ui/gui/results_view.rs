@@ -1,12 +1,12 @@
 //! Scan results view component.
 
-#[cfg(feature = "gui")]
-use eframe::egui::{self, Color32, RichText, Rounding, Ui, Vec2};
+use eframe::egui::{self, RichText, Rounding, Ui, Vec2};
 
 use super::app::{ExportFormat, ResultsAction};
 use super::theme::Theme;
-use crate::core::types::{Detection, ScanSummary, Severity};
-use std::path::PathBuf;
+use crate::core::types::{Detection, ScanStatus, ScanSummary, Severity};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 /// Results view state.
 pub struct ResultsView {
@@ -15,10 +15,8 @@ pub struct ResultsView {
     severity_filter: Option<Severity>,
     /// Search filter
     search_filter: String,
-    /// Selected detection for details
-    selected_detection: Option<usize>,
-    /// Show export dialog
-    show_export: bool,
+    /// Path of the detection whose details are shown (one detection per file)
+    selected_detection: Option<PathBuf>,
 }
 
 impl ResultsView {
@@ -29,16 +27,25 @@ impl ResultsView {
             severity_filter: None,
             search_filter: String::new(),
             selected_detection: None,
-            show_export: false,
         }
     }
 
+    /// Use a different theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     /// Render the results view.
+    ///
+    /// `quarantined` lists files already moved to quarantine; `busy` disables
+    /// quarantine buttons while a vault operation runs.
     pub fn render(
         &mut self,
         ui: &mut Ui,
         summary: Option<&ScanSummary>,
         threats: &[Detection],
+        quarantined: &HashSet<PathBuf>,
+        busy: bool,
     ) -> Option<ResultsAction> {
         let mut action = None;
 
@@ -51,9 +58,23 @@ impl ResultsView {
             ui.add_space(20.0);
 
             if let Some(summary) = summary {
-                action = self.render_summary(ui, summary).or(action);
+                if summary.status == ScanStatus::Cancelled {
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        ui.colored_label(
+                            self.theme.warning,
+                            "This scan was cancelled before it finished; results are partial.",
+                        );
+                    });
+                    ui.add_space(10.0);
+                }
+                if let Some(a) = self.render_summary(ui, summary) {
+                    action = Some(a);
+                }
                 ui.add_space(20.0);
-                action = self.render_detections(ui, threats).or(action);
+                if let Some(a) = self.render_detections(ui, threats, quarantined, busy) {
+                    action = Some(a);
+                }
             } else {
                 self.render_no_results(ui);
             }
@@ -100,6 +121,8 @@ impl ResultsView {
                     .inner_margin(15.0)
                     .show(ui, |ui| {
                         ui.set_min_size(Vec2::new(120.0, 80.0));
+                        // vertical_centered would otherwise take the whole row
+                        ui.set_max_width(120.0);
                         ui.vertical_centered(|ui| {
                             ui.label(RichText::new(value).size(28.0).color(color).strong());
                             ui.label(self.theme.label(label));
@@ -135,7 +158,13 @@ impl ResultsView {
     }
 
     /// Render detections list.
-    fn render_detections(&mut self, ui: &mut Ui, threats: &[Detection]) -> Option<ResultsAction> {
+    fn render_detections(
+        &mut self,
+        ui: &mut Ui,
+        threats: &[Detection],
+        quarantined: &HashSet<PathBuf>,
+        busy: bool,
+    ) -> Option<ResultsAction> {
         let mut action = None;
 
         ui.horizontal(|ui| {
@@ -156,10 +185,10 @@ impl ResultsView {
 
             // Severity filter
             ui.label("Severity:");
-            egui::ComboBox::from_id_salt("severity_filter")
+            egui::ComboBox::from_id_source("severity_filter")
                 .selected_text(
                     self.severity_filter
-                        .map(|s| format!("{:?}", s))
+                        .map(|s| s.to_string())
                         .unwrap_or_else(|| "All".to_string()),
                 )
                 .show_ui(ui, |ui| {
@@ -178,7 +207,7 @@ impl ResultsView {
                         if ui
                             .selectable_label(
                                 self.severity_filter == Some(severity),
-                                format!("{:?}", severity),
+                                severity.to_string(),
                             )
                             .clicked()
                         {
@@ -191,21 +220,20 @@ impl ResultsView {
         ui.add_space(10.0);
 
         // Detections table
-        ui.horizontal(|ui| {
-            ui.add_space(20.0);
+        ui.indent("results_view_1", |ui| {
 
             egui::Frame::none()
                 .fill(self.theme.surface)
                 .rounding(Rounding::same(8.0))
                 .inner_margin(10.0)
                 .show(ui, |ui| {
+ ui.vertical(|ui| {
                     ui.set_min_width(ui.available_width() - 40.0);
 
                     // Filter threats
                     let filtered: Vec<_> = threats
                         .iter()
-                        .enumerate()
-                        .filter(|(_, t)| {
+                        .filter(|t| {
                             // Severity filter
                             if let Some(severity) = self.severity_filter {
                                 if t.severity != severity {
@@ -249,88 +277,74 @@ impl ResultsView {
                         egui::ScrollArea::vertical()
                             .max_height(400.0)
                             .show(ui, |ui| {
-                                // Header
-                                ui.horizontal(|ui| {
-                                    ui.allocate_ui(Vec2::new(80.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("SEVERITY"));
-                                    });
-                                    ui.allocate_ui(Vec2::new(200.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("THREAT NAME"));
-                                    });
-                                    ui.allocate_ui(Vec2::new(300.0, 20.0), |ui| {
-                                        ui.label(self.theme.label("PATH"));
-                                    });
-                                    ui.label(self.theme.label("ACTION"));
-                                });
-                                ui.separator();
+                                // A grid keeps the columns aligned
+                                egui::Grid::new("detections_table")
+                                    .num_columns(4)
+                                    .striped(true)
+                                    .spacing([16.0, 6.0])
+                                    .show(ui, |ui| {
+                                        for header in ["SEVERITY", "THREAT NAME", "PATH", "ACTION"] {
+                                            ui.label(self.theme.label(header));
+                                        }
+                                        ui.end_row();
 
-                                // Rows
-                                for (idx, threat) in filtered {
-                                    let is_selected = self.selected_detection == Some(idx);
-                                    let bg_color = if is_selected {
-                                        self.theme.primary.linear_multiply(0.2)
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    };
+                                        for threat in filtered {
+                                            let is_selected = self.selected_detection.as_ref()
+                                                == Some(&threat.path);
 
-                                    egui::Frame::none().fill(bg_color).show(ui, |ui| {
-                                        ui.horizontal(|ui| {
-                                            // Severity
-                                            ui.allocate_ui(Vec2::new(80.0, 25.0), |ui| {
-                                                let color = self.theme.severity_color(&format!(
-                                                    "{:?}",
-                                                    threat.severity
-                                                ));
-                                                ui.colored_label(
-                                                    color,
-                                                    format!("{:?}", threat.severity),
-                                                );
-                                            });
+                                            let color = self
+                                                .theme
+                                                .severity_color(&threat.severity.to_string());
+                                            ui.colored_label(color, threat.severity.to_string());
 
-                                            // Threat name
-                                            ui.allocate_ui(Vec2::new(200.0, 25.0), |ui| {
-                                                if ui
-                                                    .selectable_label(
-                                                        is_selected,
-                                                        &threat.threat_name,
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    self.selected_detection =
-                                                        if is_selected { None } else { Some(idx) };
-                                                }
-                                            });
-
-                                            // Path
-                                            ui.allocate_ui(Vec2::new(300.0, 25.0), |ui| {
-                                                ui.label(
-                                                    RichText::new(truncate_path(&threat.path, 40))
-                                                        .monospace()
-                                                        .size(11.0),
-                                                )
-                                                .on_hover_text(threat.path.display().to_string());
-                                            });
-
-                                            // Actions
-                                            if ui.small_button("Quarantine").clicked() {
-                                                action = Some(ResultsAction::Quarantine(
-                                                    threat.path.clone(),
-                                                ));
+                                            if ui
+                                                .selectable_label(is_selected, &threat.threat_name)
+                                                .on_hover_text("Show details")
+                                                .clicked()
+                                            {
+                                                self.selected_detection = if is_selected {
+                                                    None
+                                                } else {
+                                                    Some(threat.path.clone())
+                                                };
                                             }
-                                        });
+
+                                            ui.label(
+                                                RichText::new(truncate_path(&threat.path, 60))
+                                                    .monospace()
+                                                    .size(11.0),
+                                            )
+                                            .on_hover_text(threat.path.display().to_string());
+
+                                            if quarantined.contains(&threat.path) {
+                                                ui.colored_label(self.theme.success, "Quarantined");
+                                            } else if ui
+                                                .add_enabled(
+                                                    !busy,
+                                                    egui::Button::new("Quarantine").small(),
+                                                )
+                                                .on_hover_text(
+                                                    "Move this file into the encrypted quarantine vault",
+                                                )
+                                                .clicked()
+                                            {
+                                                action =
+                                                    Some(ResultsAction::Quarantine(threat.clone()));
+                                            }
+                                            ui.end_row();
+                                        }
                                     });
-                                }
                             });
                     }
                 });
+});
         });
 
         // Detail panel for selected detection
-        if let Some(idx) = self.selected_detection {
-            if let Some(threat) = threats.get(idx) {
+        if let Some(ref selected) = self.selected_detection {
+            if let Some(threat) = threats.iter().find(|t| &t.path == selected) {
                 ui.add_space(20.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
+                ui.indent("results_view_2", |ui| {
                     self.render_detection_detail(ui, threat);
                 });
             }
@@ -360,12 +374,12 @@ impl ResultsView {
                         ui.end_row();
 
                         ui.label(self.theme.label("Severity:"));
-                        let color = self.theme.severity_color(&format!("{:?}", threat.severity));
-                        ui.colored_label(color, format!("{:?}", threat.severity));
+                        let color = self.theme.severity_color(&threat.severity.to_string());
+                        ui.colored_label(color, threat.severity.to_string());
                         ui.end_row();
 
                         ui.label(self.theme.label("Category:"));
-                        ui.label(format!("{:?}", threat.category));
+                        ui.label(threat.category.to_string());
                         ui.end_row();
 
                         ui.label(self.theme.label("Path:"));
@@ -414,14 +428,9 @@ impl ResultsView {
     }
 }
 
-/// Truncate a path for display.
-fn truncate_path(path: &PathBuf, max_len: usize) -> String {
-    let s = path.display().to_string();
-    if s.len() <= max_len {
-        s
-    } else {
-        format!("...{}", &s[s.len() - max_len + 3..])
-    }
+/// Truncate a path for display, keeping its end.
+fn truncate_path(path: &Path, max_len: usize) -> String {
+    super::truncate_start(&path.display().to_string(), max_len)
 }
 
 #[cfg(test)]

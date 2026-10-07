@@ -1,10 +1,10 @@
 //! Dashboard view component.
 
-#[cfg(feature = "gui")]
 use eframe::egui::{self, Color32, RichText, Rounding, Ui, Vec2};
 
 use super::app::{DashboardAction, ScanState};
 use super::theme::Theme;
+use crate::core::types::ScanStatus;
 
 /// Dashboard view state.
 pub struct DashboardView {
@@ -15,6 +15,11 @@ impl DashboardView {
     /// Create a new dashboard view.
     pub fn new(theme: Theme) -> Self {
         Self { theme }
+    }
+
+    /// Use a different theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     /// Render the dashboard.
@@ -40,17 +45,23 @@ impl DashboardView {
                 ui.add_space(20.0);
 
                 // System Status card
-                action = self.render_status_card(ui, scan_state).or(action);
+                if let Some(a) = self.render_status_card(ui, scan_state) {
+                    action = Some(a);
+                }
 
                 ui.add_space(10.0);
 
                 // Quarantine card
-                action = self.render_quarantine_card(ui, quarantine_count).or(action);
+                if let Some(a) = self.render_quarantine_card(ui, quarantine_count) {
+                    action = Some(a);
+                }
 
                 ui.add_space(10.0);
 
                 // Last Scan card
-                action = self.render_last_scan_card(ui, scan_state).or(action);
+                if let Some(a) = self.render_last_scan_card(ui, scan_state) {
+                    action = Some(a);
+                }
             });
 
             ui.add_space(30.0);
@@ -64,7 +75,9 @@ impl DashboardView {
 
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
-                action = self.render_quick_actions(ui, scan_state).or(action);
+                if let Some(a) = self.render_quick_actions(ui, scan_state) {
+                    action = Some(a);
+                }
             });
 
             ui.add_space(30.0);
@@ -81,17 +94,15 @@ impl DashboardView {
 
     /// Render system status card.
     fn render_status_card(&self, ui: &mut Ui, scan_state: &ScanState) -> Option<DashboardAction> {
-        let (status_text, status_color) = if scan_state.is_scanning {
-            ("Scanning...", self.theme.warning)
-        } else if scan_state
-            .last_scan
-            .as_ref()
-            .map(|s| s.threats_found > 0)
-            .unwrap_or(false)
-        {
-            ("Threats Found", self.theme.danger)
-        } else {
-            ("Protected", self.theme.success)
+        // An on-demand scanner can only report what its last scan saw.
+        let (status_text, status_color) = match scan_state.last_scan {
+            _ if scan_state.is_scanning => ("Scanning...", self.theme.warning),
+            None => ("Not scanned yet", self.theme.text_secondary),
+            Some(ref s) if s.threats_found > 0 => ("Threats Found", self.theme.danger),
+            Some(ref s) if s.status == ScanStatus::Cancelled => {
+                ("Last scan incomplete", self.theme.warning)
+            }
+            Some(_) => ("No threats found", self.theme.success),
         };
 
         egui::Frame::none()
@@ -127,10 +138,12 @@ impl DashboardView {
 
                     if scan_state.is_scanning {
                         ui.add_space(10.0);
-                        ui.add(
-                            egui::ProgressBar::new(scan_state.progress)
+                        let bar = match scan_state.total_files {
+                            Some(_) => egui::ProgressBar::new(scan_state.progress)
                                 .text(format!("{:.0}%", scan_state.progress * 100.0)),
-                        );
+                            None => egui::ProgressBar::new(0.0).text("Discovering files..."),
+                        };
+                        ui.add(bar.animate(true));
                     }
                 });
             });
@@ -158,14 +171,13 @@ impl DashboardView {
 
                     ui.add_space(10.0);
 
-                    if count > 0 {
-                        if ui
+                    if count > 0
+                        && ui
                             .small_button("View Quarantine")
                             .on_hover_text("Manage quarantined files")
                             .clicked()
-                        {
-                            action = Some(DashboardAction::ViewQuarantine);
-                        }
+                    {
+                        action = Some(DashboardAction::ViewQuarantine);
                     }
                 });
             });
@@ -262,7 +274,7 @@ impl DashboardView {
                 .color(self.theme.text_primary),
         )
         .fill(self.theme.surface)
-        .stroke(egui::Stroke::new(1.0, self.theme.border))
+        .stroke(egui::Stroke::new(1.0_f32, self.theme.border))
         .min_size(Vec2::new(150.0, 50.0))
         .rounding(Rounding::same(6.0));
 
@@ -283,7 +295,7 @@ impl DashboardView {
     fn render_drop_zone(&self, ui: &mut Ui) {
         egui::Frame::none()
             .fill(Color32::TRANSPARENT)
-            .stroke(egui::Stroke::new(2.0, self.theme.border))
+            .stroke(egui::Stroke::new(2.0_f32, self.theme.border))
             .rounding(Rounding::same(8.0))
             .inner_margin(30.0)
             .show(ui, |ui| {
@@ -311,9 +323,6 @@ mod tests {
 
     #[test]
     fn test_dashboard_creation() {
-        let theme = Theme::default();
-        let dashboard = DashboardView::new(theme);
-        // Just verify it creates without panic
-        assert!(true);
+        let _dashboard = DashboardView::new(Theme::default());
     }
 }

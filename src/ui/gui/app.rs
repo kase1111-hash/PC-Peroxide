@@ -1,6 +1,5 @@
 //! Main application struct for the GUI.
 
-#[cfg(feature = "gui")]
 use eframe::egui::{self, CentralPanel, Context, SidePanel, TopBottomPanel};
 
 use super::dashboard::DashboardView;
@@ -9,30 +8,44 @@ use super::results_view::ResultsView;
 use super::scan_view::ScanView;
 use super::settings_view::SettingsView;
 use super::theme::Theme;
-use super::updates::{SignatureUpdater, UpdateStatus};
+use super::updates::SignatureUpdater;
 use super::View;
-use crate::config::Config;
-use crate::core::types::{Detection, ScanSummary, ScanType};
-use crate::quarantine::QuarantineVault;
+use crate::core::config::Config;
+use crate::core::error::Error;
+use crate::core::types::{Detection, ScanStatus, ScanSummary, ScanType, Severity};
+use crate::quarantine::{QuarantineItem, QuarantineVault};
+use crate::scanner::{BackgroundScan, FileScanner, ScanRequest, ScanResultStore};
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
+use std::time::Duration;
 
-/// Scan state for async scanning.
+/// How often the UI refreshes while background work is running.
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Scan state shown by the views.
 #[derive(Clone)]
 pub struct ScanState {
     /// Whether a scan is in progress
     pub is_scanning: bool,
-    /// Current scan progress (0.0 - 1.0)
+    /// Whether cancellation has been requested for the running scan
+    pub cancelling: bool,
+    /// Scan progress (0.0 - 1.0), known once file discovery has finished
     pub progress: f32,
     /// Files scanned so far
     pub files_scanned: u64,
-    /// Current file being scanned
+    /// Files to scan, once discovery has finished
+    pub total_files: Option<u64>,
+    /// Folders discovered so far
+    pub directories_found: u64,
+    /// File or folder currently being processed
     pub current_file: String,
     /// Scan type
     pub scan_type: ScanType,
     /// Status message
     pub status: String,
-    /// Threats found during scan
+    /// Threats found by the running or last scan
     pub threats_found: Vec<Detection>,
     /// Completed scan summary
     pub last_scan: Option<ScanSummary>,
@@ -42,8 +55,11 @@ impl Default for ScanState {
     fn default() -> Self {
         Self {
             is_scanning: false,
+            cancelling: false,
             progress: 0.0,
             files_scanned: 0,
+            total_files: None,
+            directories_found: 0,
             current_file: String::new(),
             scan_type: ScanType::Quick,
             status: "Ready".to_string(),
@@ -51,6 +67,31 @@ impl Default for ScanState {
             last_scan: None,
         }
     }
+}
+
+/// A message shown in the top bar.
+struct Notice {
+    text: String,
+    is_error: bool,
+}
+
+/// A quarantine vault operation, run off the UI thread because encryption
+/// and secure deletion can take seconds.
+enum VaultOp {
+    Quarantine(Detection),
+    /// Critical detections quarantined automatically after a scan
+    AutoQuarantine(Vec<Detection>),
+    Restore(String),
+    Delete(String),
+    DeleteAll,
+}
+
+/// Result of a [`VaultOp`].
+struct VaultOpOutcome {
+    message: String,
+    is_error: bool,
+    /// Paths that were moved into quarantine.
+    quarantined: Vec<PathBuf>,
 }
 
 /// Main application struct.
@@ -63,11 +104,23 @@ pub struct PeroxideApp {
     dark_mode: bool,
     /// Configuration
     config: Arc<Config>,
-    /// Scan state
-    scan_state: Arc<Mutex<ScanState>>,
-    /// Quarantine vault
-    quarantine: Option<QuarantineVault>,
-    /// Signature updater
+    /// Scan state shown by the views
+    scan_state: ScanState,
+    /// Running scan, if any
+    scan: Option<BackgroundScan>,
+    /// Quarantined items, refreshed after every vault operation
+    quarantine_items: Vec<QuarantineItem>,
+    /// Error from the last attempt to read the quarantine vault
+    quarantine_error: Option<String>,
+    /// Running quarantine vault operation, if any
+    vault_task: Option<Receiver<VaultOpOutcome>>,
+    /// Vault operations waiting for the running one to finish
+    queued_vault_ops: VecDeque<VaultOp>,
+    /// Files quarantined from the current results
+    quarantined_paths: HashSet<PathBuf>,
+    /// Message shown in the top bar
+    notice: Option<Notice>,
+    /// Signature database status and import
     updater: SignatureUpdater,
     /// Dashboard view state
     dashboard: DashboardView,
@@ -81,37 +134,50 @@ pub struct PeroxideApp {
     settings_view: SettingsView,
     /// Show about dialog
     show_about: bool,
-    /// Custom scan paths (for drag & drop)
-    custom_scan_paths: Vec<PathBuf>,
 }
 
 impl PeroxideApp {
     /// Create a new application instance.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let config = Arc::new(Config::load_or_default());
-        let scan_state = Arc::new(Mutex::new(ScanState::default()));
-        let quarantine = QuarantineVault::new(None).ok();
         let theme = Theme::default();
 
         // Apply theme
         theme.apply(&cc.egui_ctx);
 
-        Self {
+        let last_scan = load_last_scan();
+        let threats_found = last_scan
+            .as_ref()
+            .map(|s| s.detections.clone())
+            .unwrap_or_default();
+
+        let mut app = Self {
             view: View::Dashboard,
             theme: theme.clone(),
             dark_mode: true,
             config: config.clone(),
-            scan_state: scan_state.clone(),
-            quarantine,
+            scan_state: ScanState {
+                threats_found,
+                last_scan,
+                ..ScanState::default()
+            },
+            scan: None,
+            quarantine_items: Vec::new(),
+            quarantine_error: None,
+            vault_task: None,
+            queued_vault_ops: VecDeque::new(),
+            quarantined_paths: HashSet::new(),
+            notice: None,
             updater: SignatureUpdater::new(),
             dashboard: DashboardView::new(theme.clone()),
-            scan_view: ScanView::new(scan_state, theme.clone()),
+            scan_view: ScanView::new(theme.clone()),
             results_view: ResultsView::new(theme.clone()),
             quarantine_view: QuarantineView::new(theme.clone()),
-            settings_view: SettingsView::new(config, theme.clone()),
+            settings_view: SettingsView::new(config, theme),
             show_about: false,
-            custom_scan_paths: Vec::new(),
-        }
+        };
+        app.refresh_quarantine();
+        app
     }
 
     /// Render the navigation sidebar.
@@ -139,7 +205,7 @@ impl PeroxideApp {
                     (View::Results, "Results", "View scan results"),
                     (View::Quarantine, "Quarantine", "Manage quarantined items"),
                     (View::Settings, "Settings", "Configure application"),
-                    (View::Updates, "Updates", "Check for updates"),
+                    (View::Updates, "Signatures", "Signature database"),
                 ];
 
                 for (view, label, tooltip) in nav_items {
@@ -159,7 +225,7 @@ impl PeroxideApp {
                     .min_size(egui::vec2(180.0, 36.0));
 
                     if ui.add(button).on_hover_text(tooltip).clicked() {
-                        self.view = view;
+                        self.navigate(view);
                     }
                     ui.add_space(4.0);
                 }
@@ -187,12 +253,12 @@ impl PeroxideApp {
                         .clicked()
                     {
                         self.dark_mode = !self.dark_mode;
-                        self.theme = if self.dark_mode {
+                        let theme = if self.dark_mode {
                             Theme::default()
                         } else {
                             Theme::light()
                         };
-                        self.theme.apply(ctx);
+                        self.set_theme(ctx, theme);
                     }
 
                     ui.add_space(10.0);
@@ -201,57 +267,77 @@ impl PeroxideApp {
             });
     }
 
+    /// Apply a theme to the context and every view.
+    fn set_theme(&mut self, ctx: &Context, theme: Theme) {
+        theme.apply(ctx);
+        self.dashboard.set_theme(theme.clone());
+        self.scan_view.set_theme(theme.clone());
+        self.results_view.set_theme(theme.clone());
+        self.quarantine_view.set_theme(theme.clone());
+        self.settings_view.set_theme(theme.clone());
+        self.theme = theme;
+    }
+
+    /// Switch views, refreshing data the new view shows.
+    fn navigate(&mut self, view: View) {
+        if view != self.view {
+            match view {
+                View::Quarantine | View::Dashboard => self.refresh_quarantine(),
+                View::Updates => self.updater.refresh(),
+                _ => {}
+            }
+        }
+        self.view = view;
+    }
+
     /// Render the top bar with status.
     fn render_top_bar(&mut self, ctx: &Context) {
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(10.0);
+            // Buttons are laid out first (right to left) so the status text
+            // gets the remaining width and is elided instead of overlapping.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("About").clicked() {
+                    self.show_about = true;
+                }
+                if self.notice.is_some() && ui.small_button("Dismiss").clicked() {
+                    self.notice = None;
+                }
 
-                // Scan status indicator - use unwrap_or_else to recover from poisoned mutex
-                let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
-                let status_color = if scan_state.is_scanning {
-                    self.theme.warning
-                } else if scan_state
-                    .last_scan
-                    .as_ref()
-                    .map(|s| s.threats_found > 0)
-                    .unwrap_or(false)
-                {
-                    self.theme.danger
-                } else {
-                    self.theme.success
-                };
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add_space(10.0);
 
-                ui.colored_label(status_color, "●");
-                ui.label(&scan_state.status);
+                    let status_color = match self.scan_state.last_scan {
+                        _ if self.scan_state.is_scanning => self.theme.warning,
+                        Some(ref s) if s.threats_found > 0 => self.theme.danger,
+                        Some(ref s) if s.status == ScanStatus::Cancelled => self.theme.warning,
+                        Some(_) => self.theme.success,
+                        None => self.theme.text_secondary,
+                    };
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // About button
-                    if ui.small_button("About").clicked() {
-                        self.show_about = true;
+                    // Painted, because the default font has no "●" glyph
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 5.0, status_color);
+                    ui.label(&self.scan_state.status);
+
+                    if self.vault_task.is_some() {
+                        ui.separator();
+                        ui.spinner();
+                        ui.label("Working...");
                     }
 
-                    ui.separator();
-
-                    // Update status
-                    match self.updater.status() {
-                        UpdateStatus::Checking => {
-                            ui.spinner();
-                            ui.label("Checking updates...");
-                        }
-                        UpdateStatus::Available { version } => {
-                            ui.colored_label(
-                                self.theme.warning,
-                                format!("Update available: {}", version),
-                            );
-                        }
-                        UpdateStatus::UpToDate => {
-                            ui.colored_label(self.theme.success, "Up to date");
-                        }
-                        UpdateStatus::Error(msg) => {
-                            ui.colored_label(self.theme.danger, format!("Update error: {}", msg));
-                        }
-                        UpdateStatus::Idle => {}
+                    if let Some(ref notice) = self.notice {
+                        ui.separator();
+                        let color = if notice.is_error {
+                            self.theme.danger
+                        } else {
+                            self.theme.success
+                        };
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(&notice.text).color(color))
+                                .truncate(true),
+                        )
+                        .on_hover_text(&notice.text);
                     }
                 });
             });
@@ -266,63 +352,52 @@ impl PeroxideApp {
 
             match self.view {
                 View::Dashboard => {
-                    let scan_state = self
-                        .scan_state
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    let quarantine_count = self
-                        .quarantine
-                        .as_ref()
-                        .and_then(|q| q.list().ok())
-                        .map(|l| l.len())
-                        .unwrap_or(0);
-
-                    if let Some(action) = self.dashboard.render(ui, &scan_state, quarantine_count) {
+                    if let Some(action) =
+                        self.dashboard
+                            .render(ui, &self.scan_state, self.quarantine_items.len())
+                    {
                         match action {
                             DashboardAction::StartQuickScan => {
-                                self.start_scan(ScanType::Quick, Vec::new());
-                                self.view = View::Scan;
+                                self.start_scan(ScanRequest::Quick);
                             }
                             DashboardAction::StartFullScan => {
-                                self.start_scan(ScanType::Full, Vec::new());
-                                self.view = View::Scan;
+                                self.start_scan(ScanRequest::Full);
                             }
                             DashboardAction::ViewResults => {
-                                self.view = View::Results;
+                                self.navigate(View::Results);
                             }
                             DashboardAction::ViewQuarantine => {
-                                self.view = View::Quarantine;
+                                self.navigate(View::Quarantine);
                             }
                         }
                     }
                 }
                 View::Scan => {
-                    if let Some(action) = self.scan_view.render(ui) {
+                    if let Some(action) = self.scan_view.render(ui, &self.scan_state) {
                         match action {
                             ScanAction::Cancel => {
                                 self.cancel_scan();
                             }
                             ScanAction::ViewResults => {
-                                self.view = View::Results;
+                                self.navigate(View::Results);
                             }
-                            ScanAction::StartScan(scan_type, paths) => {
-                                self.start_scan(scan_type, paths);
+                            ScanAction::StartScan(request) => {
+                                self.start_scan(request);
                             }
                         }
                     }
                 }
                 View::Results => {
-                    let scan_state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
                     if let Some(action) = self.results_view.render(
                         ui,
-                        scan_state.last_scan.as_ref(),
-                        &scan_state.threats_found,
+                        self.scan_state.last_scan.as_ref(),
+                        &self.scan_state.threats_found,
+                        &self.quarantined_paths,
+                        self.vault_task.is_some(),
                     ) {
-                        drop(scan_state);
                         match action {
-                            ResultsAction::Quarantine(path) => {
-                                self.quarantine_file(&path);
+                            ResultsAction::Quarantine(detection) => {
+                                self.run_vault_op(VaultOp::Quarantine(detection));
                             }
                             ResultsAction::Export(format) => {
                                 self.export_results(format);
@@ -331,34 +406,36 @@ impl PeroxideApp {
                     }
                 }
                 View::Quarantine => {
-                    let items = self
-                        .quarantine
-                        .as_ref()
-                        .and_then(|q| q.list().ok())
-                        .unwrap_or_default();
-
-                    if let Some(action) = self.quarantine_view.render(ui, &items) {
+                    if let Some(action) = self.quarantine_view.render(
+                        ui,
+                        &self.quarantine_items,
+                        self.quarantine_error.as_deref(),
+                        self.vault_task.is_some(),
+                    ) {
                         match action {
                             QuarantineAction::Restore(id) => {
-                                self.restore_quarantined(&id);
+                                self.run_vault_op(VaultOp::Restore(id));
                             }
                             QuarantineAction::Delete(id) => {
-                                self.delete_quarantined(&id);
+                                self.run_vault_op(VaultOp::Delete(id));
                             }
                             QuarantineAction::DeleteAll => {
-                                self.clear_quarantine();
+                                self.run_vault_op(VaultOp::DeleteAll);
+                            }
+                            QuarantineAction::Refresh => {
+                                self.refresh_quarantine();
                             }
                         }
                     }
                 }
                 View::Settings => {
                     if self.settings_view.render(ui) {
-                        // Settings were saved - reload config
+                        // Settings were saved - reload config for the next scan
                         self.config = Arc::new(Config::load_or_default());
                     }
                 }
                 View::Updates => {
-                    self.render_updates_view(ui);
+                    self.updater.render(ui, &self.theme);
                 }
             }
         });
@@ -366,73 +443,16 @@ impl PeroxideApp {
 
     /// Handle file drag and drop.
     fn handle_file_drop(&mut self, ctx: &Context) {
-        // Check for dropped files
-        ctx.input(|i| {
-            if !i.raw.dropped_files.is_empty() {
-                self.custom_scan_paths.clear();
-                for file in &i.raw.dropped_files {
-                    if let Some(path) = &file.path {
-                        self.custom_scan_paths.push(path.clone());
-                    }
-                }
-
-                if !self.custom_scan_paths.is_empty() {
-                    self.start_scan(ScanType::Custom, self.custom_scan_paths.clone());
-                    self.view = View::Scan;
-                }
-            }
-        });
-    }
-
-    /// Render updates view.
-    fn render_updates_view(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Signature Updates");
-        ui.add_space(20.0);
-
-        ui.horizontal(|ui| {
-            if ui.button("Check for Updates").clicked() {
-                self.updater.check_for_updates();
-            }
-
-            ui.add_space(10.0);
-
-            match self.updater.status() {
-                UpdateStatus::Available { version } => {
-                    if ui.button(format!("Download {}", version)).clicked() {
-                        self.updater.download_update();
-                    }
-                }
-                _ => {}
-            }
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|file| file.path.clone())
+                .collect()
         });
 
-        ui.add_space(20.0);
-
-        // Show current signature info
-        ui.group(|ui| {
-            ui.label(self.theme.subheading("Current Signatures"));
-            ui.add_space(10.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Version:");
-                ui.label(self.updater.current_version());
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Last Updated:");
-                ui.label(self.updater.last_updated());
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Signature Count:");
-                ui.label(format!("{}", self.updater.signature_count()));
-            });
-        });
-
-        // Update progress
-        if let UpdateStatus::Downloading { progress } = self.updater.status() {
-            ui.add_space(20.0);
-            ui.add(egui::ProgressBar::new(progress).text("Downloading..."));
+        if !dropped.is_empty() {
+            self.start_scan(ScanRequest::Custom(dropped));
         }
     }
 
@@ -470,134 +490,399 @@ impl PeroxideApp {
         }
     }
 
-    /// Start a scan with the given type and paths.
-    fn start_scan(&self, scan_type: ScanType, paths: Vec<PathBuf>) {
-        let mut state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
-        state.is_scanning = true;
-        state.progress = 0.0;
-        state.files_scanned = 0;
-        state.current_file = String::new();
-        state.scan_type = scan_type;
-        state.status = format!("Starting {:?} scan...", scan_type);
-        state.threats_found.clear();
+    /// Start a scan in the background.
+    fn start_scan(&mut self, request: ScanRequest) {
+        if self.scan.is_some() {
+            self.set_notice("A scan is already running", true);
+            return;
+        }
+        if let ScanRequest::Custom(ref paths) = request {
+            if paths.is_empty() {
+                self.set_notice("Choose at least one file or folder to scan", true);
+                return;
+            }
+        }
 
-        // Note: Actual scanning would be done in a background thread
-        // This is a placeholder for the UI state management
-        drop(state);
+        let scan_type = request.scan_type();
+        let config = Arc::clone(&self.config);
+        self.scan = Some(BackgroundScan::spawn(
+            request,
+            move || FileScanner::new(config),
+            |summary| match ScanResultStore::open_default() {
+                Ok(store) => {
+                    if let Err(e) = store.save_scan(summary) {
+                        log::warn!("Failed to save scan results: {}", e);
+                    }
+                }
+                Err(e) => log::warn!("Failed to open scan history: {}", e),
+            },
+        ));
 
-        // TODO: Spawn actual scan task
-        log::info!(
-            "Starting {:?} scan with {} custom paths",
+        self.notice = None;
+        self.quarantined_paths.clear();
+        self.scan_state = ScanState {
+            is_scanning: true,
             scan_type,
-            paths.len()
-        );
+            status: format!("Starting {}...", scan_type),
+            last_scan: self.scan_state.last_scan.take(),
+            ..ScanState::default()
+        };
+        self.view = View::Scan;
+        log::info!("Started {}", scan_type);
     }
 
-    /// Cancel the current scan.
-    fn cancel_scan(&self) {
-        let mut state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
+    /// Ask the running scan to stop.
+    fn cancel_scan(&mut self) {
+        if let Some(ref scan) = self.scan {
+            scan.cancel();
+            self.scan_state.cancelling = true;
+            self.scan_state.status = "Cancelling scan...".to_string();
+        }
+    }
+
+    /// Copy progress from the running scan and handle its completion.
+    fn poll_scan(&mut self) {
+        let Some(scan) = self.scan.as_mut() else {
+            return;
+        };
+
+        let state = &mut self.scan_state;
+        if let Some(progress) = scan.progress() {
+            state.files_scanned = progress.files_scanned;
+            state.total_files = progress.total_files;
+            state.directories_found = progress.directories_scanned;
+            state.current_file = progress
+                .current_path
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            state.progress = match progress.total_files {
+                Some(0) => 1.0,
+                Some(total) => (progress.files_scanned as f32 / total as f32).min(1.0),
+                None => 0.0,
+            };
+            if !state.cancelling {
+                state.status = match progress.total_files {
+                    None => format!(
+                        "Discovering files ({} folders)...",
+                        progress.directories_scanned
+                    ),
+                    Some(total) => {
+                        format!("Scanning {} of {} files...", progress.files_scanned, total)
+                    }
+                };
+            }
+            if progress.threats_found as usize != state.threats_found.len() {
+                state.threats_found = scan.detections();
+            }
+        }
+
+        let Some(outcome) = scan.take_outcome() else {
+            return;
+        };
+        self.scan = None;
         state.is_scanning = false;
-        state.status = "Scan cancelled".to_string();
-    }
+        state.cancelling = false;
+        state.current_file.clear();
 
-    /// Quarantine a file.
-    fn quarantine_file(&mut self, path: &PathBuf) {
-        if let Some(ref mut vault) = self.quarantine {
-            match vault.quarantine_file(path, "GUI quarantine action", None) {
-                Ok(_) => {
-                    log::info!("Quarantined file: {:?}", path);
+        match outcome {
+            Ok(summary) => {
+                state.status = match summary.status {
+                    ScanStatus::Cancelled => format!(
+                        "Scan cancelled after {} files ({} threats found)",
+                        summary.files_scanned, summary.threats_found
+                    ),
+                    _ => format!(
+                        "Scan complete: {} files scanned, {} threats found",
+                        summary.files_scanned, summary.threats_found
+                    ),
+                };
+                log::info!("{}", state.status);
+                state.threats_found = summary.detections.clone();
+                let critical: Vec<Detection> = summary
+                    .detections
+                    .iter()
+                    .filter(|d| d.severity == Severity::Critical)
+                    .cloned()
+                    .collect();
+                state.last_scan = Some(summary);
+                if !state.threats_found.is_empty() {
+                    self.view = View::Results;
                 }
-                Err(e) => {
-                    log::error!("Failed to quarantine file: {}", e);
+                if self.config.actions.auto_quarantine_critical && !critical.is_empty() {
+                    self.run_vault_op(VaultOp::AutoQuarantine(critical));
                 }
+            }
+            Err(Error::ScanCancelled) => {
+                state.status = "Scan cancelled".to_string();
+            }
+            Err(e) => {
+                state.status = "Scan failed".to_string();
+                log::error!("Scan failed: {}", e);
+                self.set_notice(&format!("Scan failed: {}", e), true);
             }
         }
     }
 
-    /// Restore a quarantined file.
-    fn restore_quarantined(&mut self, id: &str) {
-        if let Some(ref mut vault) = self.quarantine {
-            match vault.restore(id, None) {
-                Ok(path) => {
-                    log::info!("Restored file to: {:?}", path);
-                }
-                Err(e) => {
-                    log::error!("Failed to restore file: {}", e);
-                }
-            }
+    /// Run a quarantine vault operation on a worker thread, after any
+    /// operation already running.
+    fn run_vault_op(&mut self, op: VaultOp) {
+        if self.vault_task.is_some() {
+            self.queued_vault_ops.push_back(op);
+            return;
+        }
+
+        let vault_dir = self.config.quarantine.quarantine_dir();
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("quarantine-op".to_string())
+            .spawn(move || {
+                let _ = tx.send(perform_vault_op(&vault_dir, op));
+            });
+        match spawned {
+            Ok(_) => self.vault_task = Some(rx),
+            Err(e) => self.set_notice(&format!("Failed to start operation: {}", e), true),
         }
     }
 
-    /// Delete a quarantined file.
-    fn delete_quarantined(&mut self, id: &str) {
-        if let Some(ref mut vault) = self.quarantine {
-            match vault.delete(id) {
-                Ok(_) => {
-                    log::info!("Deleted quarantined file: {}", id);
-                }
-                Err(e) => {
-                    log::error!("Failed to delete file: {}", e);
-                }
-            }
+    /// Handle completion of the running vault operation.
+    fn poll_vault_task(&mut self) {
+        let Some(ref rx) = self.vault_task else {
+            return;
+        };
+        let outcome = match rx.try_recv() {
+            Ok(outcome) => outcome,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => VaultOpOutcome {
+                message: "Quarantine operation failed unexpectedly".to_string(),
+                is_error: true,
+                quarantined: Vec::new(),
+            },
+        };
+        self.vault_task = None;
+
+        self.quarantined_paths.extend(outcome.quarantined);
+        if outcome.is_error {
+            log::error!("{}", outcome.message);
+        } else {
+            log::info!("{}", outcome.message);
+        }
+        self.set_notice(&outcome.message, outcome.is_error);
+        self.refresh_quarantine();
+
+        if let Some(next) = self.queued_vault_ops.pop_front() {
+            self.run_vault_op(next);
         }
     }
 
-    /// Clear all quarantined files.
-    fn clear_quarantine(&mut self) {
-        if let Some(ref mut vault) = self.quarantine {
-            match vault.clear() {
-                Ok(count) => {
-                    log::info!("Cleared {} quarantined files", count);
-                }
-                Err(e) => {
-                    log::error!("Failed to clear quarantine: {}", e);
-                }
+    /// Reload the list of quarantined items.
+    fn refresh_quarantine(&mut self) {
+        let vault_dir = self.config.quarantine.quarantine_dir();
+        match QuarantineVault::open(&vault_dir).and_then(|vault| vault.list()) {
+            Ok(items) => {
+                self.quarantine_items = items;
+                self.quarantine_error = None;
+            }
+            Err(e) => {
+                self.quarantine_items.clear();
+                self.quarantine_error = Some(format!("Cannot open quarantine vault: {}", e));
             }
         }
     }
 
     /// Export scan results.
-    fn export_results(&self, format: ExportFormat) {
-        let state = self.scan_state.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref summary) = state.last_scan {
-            // Open file dialog
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title("Export Scan Results")
-                .add_filter(format.extension(), &[format.extension()])
-                .save_file()
-            {
-                let report_format = match format {
-                    ExportFormat::Html => crate::ui::report::ReportFormat::Html,
-                    ExportFormat::Csv => crate::ui::report::ReportFormat::Csv,
-                    ExportFormat::Pdf => crate::ui::report::ReportFormat::Pdf,
-                    ExportFormat::Json => crate::ui::report::ReportFormat::Json,
-                };
+    fn export_results(&mut self, format: ExportFormat) {
+        let Some(ref summary) = self.scan_state.last_scan else {
+            return;
+        };
 
-                if let Err(e) = crate::ui::report::generate_report(summary, report_format, &path) {
-                    log::error!("Failed to export report: {}", e);
-                } else {
-                    log::info!("Exported report to: {:?}", path);
-                }
+        // Native save dialog (modal)
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export Scan Results")
+            .set_file_name(format!("pc-peroxide-scan.{}", format.extension()))
+            .add_filter(format.extension(), &[format.extension()])
+            .save_file()
+        else {
+            return;
+        };
+
+        let report_format = match format {
+            ExportFormat::Html => crate::ui::report::ReportFormat::Html,
+            ExportFormat::Csv => crate::ui::report::ReportFormat::Csv,
+            ExportFormat::Pdf => crate::ui::report::ReportFormat::Pdf,
+            ExportFormat::Json => crate::ui::report::ReportFormat::Json,
+        };
+
+        match crate::ui::report::generate_report(summary, report_format, &path) {
+            Ok(()) => {
+                log::info!("Exported report to: {:?}", path);
+                self.set_notice(&format!("Report saved to {}", path.display()), false);
+            }
+            Err(e) => {
+                log::error!("Failed to export report: {}", e);
+                self.set_notice(&format!("Failed to export report: {}", e), true);
             }
         }
+    }
+
+    fn set_notice(&mut self, text: &str, is_error: bool) {
+        self.notice = Some(Notice {
+            text: text.to_string(),
+            is_error,
+        });
     }
 }
 
 impl eframe::App for PeroxideApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        self.poll_scan();
+        self.poll_vault_task();
+        self.updater.poll();
+
         self.render_sidebar(ctx);
         self.render_top_bar(ctx);
         self.render_content(ctx);
         self.render_about(ctx);
 
-        // Request repaint if scanning - use unwrap_or_else to recover from poisoned mutex
-        if self
-            .scan_state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_scanning
-        {
-            ctx.request_repaint();
+        // Keep polling background work without spinning the CPU
+        if self.scan.is_some() || self.vault_task.is_some() || self.updater.is_busy() {
+            ctx.request_repaint_after(POLL_INTERVAL);
+        }
+    }
+}
+
+/// Load the most recent scan from history, with its detections.
+fn load_last_scan() -> Option<ScanSummary> {
+    let store = ScanResultStore::open_default().ok()?;
+    let latest = store.get_recent_scans(1).ok()?.into_iter().next()?;
+    store.load_scan(&latest.scan_id).ok().flatten()
+}
+
+/// Move a detected file into the vault.
+fn quarantine_detection(
+    vault: &QuarantineVault,
+    detection: &Detection,
+) -> Result<Option<String>, String> {
+    let result = vault.quarantine(
+        &detection.path,
+        &detection.threat_name,
+        &detection.category.to_string(),
+        detection.severity.score(),
+        true,
+    );
+    if result.success {
+        Ok(result.warning)
+    } else {
+        Err(format!(
+            "Failed to quarantine {}: {}",
+            detection.path.display(),
+            result.error.unwrap_or_else(|| "unknown error".to_string())
+        ))
+    }
+}
+
+/// Run a vault operation against the vault in `vault_dir`.
+fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome {
+    let fail = |message: String| VaultOpOutcome {
+        message,
+        is_error: true,
+        quarantined: Vec::new(),
+    };
+    let done = |message: String| VaultOpOutcome {
+        message,
+        is_error: false,
+        quarantined: Vec::new(),
+    };
+
+    let vault = match QuarantineVault::open(vault_dir) {
+        Ok(vault) => vault,
+        Err(e) => return fail(format!("Cannot open quarantine vault: {}", e)),
+    };
+
+    match op {
+        VaultOp::Quarantine(detection) => match quarantine_detection(&vault, &detection) {
+            Ok(warning) => VaultOpOutcome {
+                message: match warning {
+                    Some(warning) => format!(
+                        "Quarantined {} with a warning: {}",
+                        detection.path.display(),
+                        warning
+                    ),
+                    None => format!("Quarantined {}", detection.path.display()),
+                },
+                is_error: false,
+                quarantined: vec![detection.path],
+            },
+            Err(message) => fail(message),
+        },
+        VaultOp::AutoQuarantine(detections) => {
+            let total = detections.len();
+            let mut quarantined = Vec::new();
+            let mut errors = Vec::new();
+            for detection in detections {
+                match quarantine_detection(&vault, &detection) {
+                    Ok(_) => quarantined.push(detection.path),
+                    Err(message) => {
+                        log::error!("{}", message);
+                        errors.push(message);
+                    }
+                }
+            }
+            VaultOpOutcome {
+                message: if errors.is_empty() {
+                    format!("Automatically quarantined {} critical threat(s)", total)
+                } else {
+                    format!(
+                        "Automatically quarantined {} of {} critical threat(s); {}",
+                        quarantined.len(),
+                        total,
+                        errors.join("; ")
+                    )
+                },
+                is_error: !errors.is_empty(),
+                quarantined,
+            }
+        }
+        VaultOp::Restore(id) => {
+            let result = vault.restore(&id);
+            if result.success {
+                done(format!("Restored {}", result.restored_path.display()))
+            } else {
+                fail(format!(
+                    "Failed to restore: {}",
+                    result.error.unwrap_or_else(|| "unknown error".to_string())
+                ))
+            }
+        }
+        VaultOp::Delete(id) => match vault.delete(&id) {
+            Ok(()) => done("Deleted quarantined item".to_string()),
+            Err(e) => fail(format!("Failed to delete quarantined item: {}", e)),
+        },
+        VaultOp::DeleteAll => {
+            let items = match vault.list() {
+                Ok(items) => items,
+                Err(e) => return fail(format!("Cannot list quarantine: {}", e)),
+            };
+            let total = items.len();
+            let failed = items
+                .iter()
+                .filter(|item| match vault.delete(&item.id) {
+                    Ok(()) => false,
+                    Err(e) => {
+                        log::error!("Failed to delete quarantine item {}: {}", item.id, e);
+                        true
+                    }
+                })
+                .count();
+            if failed == 0 {
+                done(format!("Deleted {} quarantined item(s)", total))
+            } else {
+                fail(format!(
+                    "Deleted {} of {} quarantined item(s); {} failed",
+                    total - failed,
+                    total,
+                    failed
+                ))
+            }
         }
     }
 }
@@ -614,12 +899,12 @@ pub enum DashboardAction {
 pub enum ScanAction {
     Cancel,
     ViewResults,
-    StartScan(ScanType, Vec<PathBuf>),
+    StartScan(ScanRequest),
 }
 
 /// Actions from results view.
 pub enum ResultsAction {
-    Quarantine(PathBuf),
+    Quarantine(Detection),
     Export(ExportFormat),
 }
 
@@ -628,6 +913,7 @@ pub enum QuarantineAction {
     Restore(String),
     Delete(String),
     DeleteAll,
+    Refresh,
 }
 
 /// Export formats.

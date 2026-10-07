@@ -1,10 +1,9 @@
 //! Settings/configuration view component.
 
-#[cfg(feature = "gui")]
 use eframe::egui::{self, RichText, Rounding, Ui, Vec2};
 
 use super::theme::Theme;
-use crate::config::Config;
+use crate::core::config::Config;
 use std::sync::Arc;
 
 /// Settings view state.
@@ -17,9 +16,14 @@ pub struct SettingsView {
     has_changes: bool,
     /// Show save confirmation
     show_saved: bool,
+    /// Error from the last save attempt
+    save_error: Option<String>,
 }
 
 /// Edited settings (mutable copy).
+///
+/// Only settings the application acts on are offered here; others in the
+/// config file (retention, online updates) have no implementation yet.
 #[derive(Clone)]
 struct EditedSettings {
     // Scan settings
@@ -32,15 +36,9 @@ struct EditedSettings {
     // Action/Quarantine settings
     auto_quarantine_critical: bool,
     vault_path: String,
-    retention_days: u32,
-
-    // Update settings
-    auto_update_signatures: bool,
-    update_check_interval_hours: u32,
 
     // Logging
     log_level: String,
-    verbose_console: bool,
 }
 
 impl From<&Config> for EditedSettings {
@@ -58,11 +56,7 @@ impl From<&Config> for EditedSettings {
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
-            retention_days: config.quarantine.retention_days,
-            auto_update_signatures: config.updates.auto_update_signatures,
-            update_check_interval_hours: config.updates.update_check_interval_hours,
             log_level: config.logging.log_level.clone(),
-            verbose_console: config.logging.verbose_console,
         }
     }
 }
@@ -77,7 +71,13 @@ impl SettingsView {
             edited,
             has_changes: false,
             show_saved: false,
+            save_error: None,
         }
+    }
+
+    /// Use a different theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     /// Render the settings view. Returns true if settings were saved.
@@ -105,10 +105,14 @@ impl SettingsView {
                             )
                             .clicked()
                         {
-                            if self.save_settings() {
-                                saved = true;
-                                self.has_changes = false;
-                                self.show_saved = true;
+                            match self.save_settings() {
+                                Ok(()) => {
+                                    saved = true;
+                                    self.has_changes = false;
+                                    self.show_saved = true;
+                                    self.save_error = None;
+                                }
+                                Err(e) => self.save_error = Some(e),
                             }
                         }
                     });
@@ -122,6 +126,14 @@ impl SettingsView {
 
             ui.add_space(20.0);
 
+            if let Some(ref error) = self.save_error {
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.colored_label(self.theme.danger, format!("Settings not saved: {}", error));
+                });
+                ui.add_space(10.0);
+            }
+
             // Settings sections
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -134,9 +146,6 @@ impl SettingsView {
                         ui.add_space(20.0);
 
                         self.render_quarantine_settings(ui);
-                        ui.add_space(20.0);
-
-                        self.render_update_settings(ui);
                         ui.add_space(20.0);
 
                         self.render_logging_settings(ui);
@@ -174,12 +183,13 @@ impl SettingsView {
             // Skip large files
             ui.horizontal(|ui| {
                 ui.label("Skip files larger than:");
-                let mut value = this.edited.skip_large_files_mb as f32;
                 if ui
-                    .add(egui::Slider::new(&mut value, 0.0..=1000.0).suffix(" MB"))
+                    .add(
+                        egui::Slider::new(&mut this.edited.skip_large_files_mb, 1..=1000)
+                            .suffix(" MB"),
+                    )
                     .changed()
                 {
-                    this.edited.skip_large_files_mb = value as u64;
                     this.has_changes = true;
                 }
             });
@@ -188,7 +198,7 @@ impl SettingsView {
             if ui
                 .checkbox(
                     &mut this.edited.scan_archives,
-                    "Scan inside archives (ZIP, RAR, etc.)",
+                    "Scan inside ZIP-based archives (ZIP, JAR, APK, Office documents)",
                 )
                 .changed()
             {
@@ -199,9 +209,13 @@ impl SettingsView {
             ui.add_enabled_ui(this.edited.scan_archives, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Max archive nesting depth:");
-                    let mut value = this.edited.max_archive_depth as f32;
-                    if ui.add(egui::Slider::new(&mut value, 1.0..=10.0)).changed() {
-                        this.edited.max_archive_depth = value as u8;
+                    if ui
+                        .add(egui::Slider::new(
+                            &mut this.edited.max_archive_depth,
+                            1..=10,
+                        ))
+                        .changed()
+                    {
                         this.has_changes = true;
                     }
                 });
@@ -215,17 +229,19 @@ impl SettingsView {
                 this.has_changes = true;
             }
 
-            // Parallel threads
+            // Parallel workers (the scanner uses at most 8)
             ui.horizontal(|ui| {
                 ui.label("Scan threads:");
-                let max_threads = num_cpus().max(1);
-                let mut value = this.edited.scan_threads as f32;
+                let max_threads = num_cpus().clamp(1, 8);
+                this.edited.scan_threads = this.edited.scan_threads.clamp(1, max_threads);
                 if ui
-                    .add(egui::Slider::new(&mut value, 1.0..=(max_threads as f32)))
-                    .on_hover_text("Number of parallel threads for scanning")
+                    .add(egui::Slider::new(
+                        &mut this.edited.scan_threads,
+                        1..=max_threads,
+                    ))
+                    .on_hover_text("Number of files scanned in parallel")
                     .changed()
                 {
-                    this.edited.scan_threads = value as usize;
                     this.has_changes = true;
                 }
             });
@@ -239,7 +255,7 @@ impl SettingsView {
             if ui
                 .checkbox(
                     &mut this.edited.auto_quarantine_critical,
-                    "Automatically quarantine critical threats",
+                    "Automatically quarantine critical threats after a scan",
                 )
                 .changed()
             {
@@ -265,51 +281,10 @@ impl SettingsView {
                     }
                 }
             });
-
-            // Retention days
-            ui.horizontal(|ui| {
-                ui.label("Auto-delete quarantined files after:");
-                let mut value = this.edited.retention_days as f32;
-                if ui
-                    .add(egui::Slider::new(&mut value, 0.0..=365.0).suffix(" days"))
-                    .on_hover_text("Set to 0 to never auto-delete")
-                    .changed()
-                {
-                    this.edited.retention_days = value as u32;
-                    this.has_changes = true;
-                }
-            });
-        });
-    }
-
-    /// Render update settings section.
-    fn render_update_settings(&mut self, ui: &mut Ui) {
-        self.render_section(ui, "Update Settings", |this, ui| {
-            // Auto update
-            if ui
-                .checkbox(
-                    &mut this.edited.auto_update_signatures,
-                    "Automatically update signatures",
-                )
-                .changed()
-            {
-                this.has_changes = true;
-            }
-
-            // Update interval
-            ui.add_enabled_ui(this.edited.auto_update_signatures, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Check for updates every:");
-                    let mut value = this.edited.update_check_interval_hours as f32;
-                    if ui
-                        .add(egui::Slider::new(&mut value, 1.0..=168.0).suffix(" hours"))
-                        .changed()
-                    {
-                        this.edited.update_check_interval_hours = value as u32;
-                        this.has_changes = true;
-                    }
-                });
-            });
+            ui.label(this.theme.label(&format!(
+                "Leave empty for the default ({}). Items already quarantined stay in the old folder.",
+                crate::quarantine::get_quarantine_path().display()
+            )));
         });
     }
 
@@ -319,7 +294,7 @@ impl SettingsView {
             // Log level
             ui.horizontal(|ui| {
                 ui.label("Log level:");
-                egui::ComboBox::from_id_salt("log_level")
+                egui::ComboBox::from_id_source("log_level")
                     .selected_text(&this.edited.log_level)
                     .show_ui(ui, |ui| {
                         for level in ["error", "warn", "info", "debug", "trace"] {
@@ -333,14 +308,10 @@ impl SettingsView {
                         }
                     });
             });
-
-            // Verbose console
-            if ui
-                .checkbox(&mut this.edited.verbose_console, "Verbose console output")
-                .changed()
-            {
-                this.has_changes = true;
-            }
+            ui.label(this.theme.label(&format!(
+                "Takes effect on restart. Log file: {}",
+                this.config.logging.log_dir().join("pc-peroxide.log").display()
+            )));
         });
     }
 
@@ -365,7 +336,7 @@ impl SettingsView {
     }
 
     /// Save settings to config file.
-    fn save_settings(&mut self) -> bool {
+    fn save_settings(&mut self) -> Result<(), String> {
         let mut config = (*self.config).clone();
 
         // Apply edited values
@@ -376,30 +347,26 @@ impl SettingsView {
         config.scan.scan_threads = self.edited.scan_threads;
 
         config.actions.auto_quarantine_critical = self.edited.auto_quarantine_critical;
-        config.quarantine.vault_path = if self.edited.vault_path.is_empty() {
+        let vault_path = self.edited.vault_path.trim();
+        config.quarantine.vault_path = if vault_path.is_empty() {
             None
         } else {
-            Some(self.edited.vault_path.clone().into())
+            Some(vault_path.into())
         };
-        config.quarantine.retention_days = self.edited.retention_days;
-
-        config.updates.auto_update_signatures = self.edited.auto_update_signatures;
-        config.updates.update_check_interval_hours = self.edited.update_check_interval_hours;
 
         config.logging.log_level = self.edited.log_level.clone();
-        config.logging.verbose_console = self.edited.verbose_console;
 
-        // Save to file
+        // Validate, then save to file
         let config_path = Config::default_config_path();
-        match config.save(&config_path) {
-            Ok(_) => {
+        match config.validate().and_then(|()| config.save(&config_path)) {
+            Ok(()) => {
                 self.config = Arc::new(config);
                 log::info!("Settings saved successfully");
-                true
+                Ok(())
             }
             Err(e) => {
                 log::error!("Failed to save settings: {}", e);
-                false
+                Err(e.to_string())
             }
         }
     }

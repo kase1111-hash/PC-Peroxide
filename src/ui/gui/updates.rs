@@ -1,216 +1,202 @@
-//! Signature update functionality.
+//! Signature database status and import.
 
-use chrono::{DateTime, Local};
-use std::sync::{Arc, Mutex};
+use eframe::egui::{self, RichText, Ui};
 
-/// Update status.
-#[derive(Clone)]
-pub enum UpdateStatus {
-    /// No update check in progress
-    Idle,
-    /// Checking for updates
-    Checking,
-    /// Update available
-    Available { version: String },
-    /// Already up to date
-    UpToDate,
-    /// Downloading update
-    Downloading { progress: f32 },
-    /// Error occurred
-    Error(String),
-}
+use super::theme::Theme;
+use crate::detection::{DatabaseInfo, ImportResult, SignatureDatabase};
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-/// Signature update info.
-#[derive(Clone)]
-pub struct SignatureInfo {
-    /// Current version
-    pub version: String,
-    /// Last update time
-    pub last_updated: Option<DateTime<Local>>,
-    /// Number of signatures
-    pub signature_count: usize,
-}
-
-impl Default for SignatureInfo {
-    fn default() -> Self {
-        Self {
-            version: "1.0.0".to_string(),
-            last_updated: None,
-            signature_count: 0,
-        }
-    }
-}
-
-/// Signature updater.
+/// Signature database status shown in the Signatures view, plus importing
+/// signature files.
+///
+/// Online updates are not implemented yet (the CLI says the same), so this
+/// only reports real database state and imports local files.
 pub struct SignatureUpdater {
-    /// Current status
-    status: Arc<Mutex<UpdateStatus>>,
-    /// Signature info
-    info: Arc<Mutex<SignatureInfo>>,
-    /// Update URL
-    update_url: String,
+    /// Database info from the last refresh
+    info: Option<DatabaseInfo>,
+    /// Error from the last refresh
+    error: Option<String>,
+    /// Running import, if any
+    import_task: Option<Receiver<Result<ImportResult, String>>>,
+    /// Message describing the last import
+    last_import: Option<(String, bool)>,
 }
 
 impl SignatureUpdater {
-    /// Create a new signature updater.
+    /// Create an updater and read the current database state.
     pub fn new() -> Self {
-        Self {
-            status: Arc::new(Mutex::new(UpdateStatus::Idle)),
-            info: Arc::new(Mutex::new(SignatureInfo::default())),
-            update_url: "https://api.pc-peroxide.io/signatures".to_string(),
-        }
-    }
-
-    /// Get current status.
-    pub fn status(&self) -> UpdateStatus {
-        self.status.lock().unwrap().clone()
-    }
-
-    /// Get current signature version.
-    pub fn current_version(&self) -> String {
-        self.info.lock().unwrap().version.clone()
-    }
-
-    /// Get last updated time.
-    pub fn last_updated(&self) -> String {
-        self.info
-            .lock()
-            .unwrap()
-            .last_updated
-            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-            .unwrap_or_else(|| "Never".to_string())
-    }
-
-    /// Get signature count.
-    pub fn signature_count(&self) -> usize {
-        self.info.lock().unwrap().signature_count
-    }
-
-    /// Check for updates (async simulation).
-    pub fn check_for_updates(&self) {
-        let status = self.status.clone();
-        let info = self.info.clone();
-        let _url = self.update_url.clone();
-
-        // Set checking status
-        *status.lock().unwrap() = UpdateStatus::Checking;
-
-        // Spawn background task
-        std::thread::spawn(move || {
-            // Simulate network delay
-            std::thread::sleep(std::time::Duration::from_secs(2));
-
-            // In a real implementation, this would:
-            // 1. Fetch update manifest from server
-            // 2. Compare versions
-            // 3. Return available update info
-
-            // For now, simulate response
-            let current_version = info.lock().unwrap().version.clone();
-            let latest_version = "1.1.0";
-
-            if current_version != latest_version {
-                *status.lock().unwrap() = UpdateStatus::Available {
-                    version: latest_version.to_string(),
-                };
-            } else {
-                *status.lock().unwrap() = UpdateStatus::UpToDate;
-            }
-        });
-    }
-
-    /// Download and apply update.
-    pub fn download_update(&self) {
-        let status = self.status.clone();
-        let info = self.info.clone();
-
-        // Get target version
-        let target_version = match &*status.lock().unwrap() {
-            UpdateStatus::Available { version } => version.clone(),
-            _ => return,
+        let mut updater = Self {
+            info: None,
+            error: None,
+            import_task: None,
+            last_import: None,
         };
-
-        // Start download
-        *status.lock().unwrap() = UpdateStatus::Downloading { progress: 0.0 };
-
-        std::thread::spawn(move || {
-            // Simulate download progress
-            for i in 0..=100 {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                *status.lock().unwrap() = UpdateStatus::Downloading {
-                    progress: i as f32 / 100.0,
-                };
-            }
-
-            // In a real implementation, this would:
-            // 1. Download signature database
-            // 2. Verify GPG signature
-            // 3. Apply delta update or full update
-            // 4. Update local database
-
-            // Simulate success
-            {
-                let mut info = info.lock().unwrap();
-                info.version = target_version;
-                info.last_updated = Some(Local::now());
-                info.signature_count += 150; // Simulate new signatures
-            }
-
-            *status.lock().unwrap() = UpdateStatus::UpToDate;
-        });
+        updater.refresh();
+        updater
     }
 
-    /// Import signatures from local file.
-    #[allow(dead_code)]
-    pub fn import_from_file(&self, path: &std::path::Path) -> Result<usize, String> {
-        // Read and parse signature file
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+    /// Re-read the signature database state.
+    pub fn refresh(&mut self) {
+        match SignatureDatabase::open_default().and_then(|db| db.info()) {
+            Ok(info) => {
+                self.info = Some(info);
+                self.error = None;
+            }
+            Err(e) => {
+                self.info = None;
+                self.error = Some(format!("Cannot read signature database: {}", e));
+            }
+        }
+    }
 
-        // In a real implementation, this would:
-        // 1. Validate file format
-        // 2. Verify signatures
-        // 3. Import into database
+    /// Whether an import is running.
+    pub fn is_busy(&self) -> bool {
+        self.import_task.is_some()
+    }
 
-        // Simulate import
-        let count = content.lines().count();
+    /// Import a signature file on a worker thread.
+    pub fn start_import(&mut self, path: PathBuf) {
+        if self.import_task.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("signature-import".to_string())
+            .spawn(move || {
+                let result = SignatureDatabase::open_default()
+                    .and_then(|db| db.import_file(&path))
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+        match spawned {
+            Ok(_) => {
+                self.import_task = Some(rx);
+                self.last_import = None;
+            }
+            Err(e) => self.last_import = Some((format!("Failed to start import: {}", e), true)),
+        }
+    }
 
-        // Update info
-        {
-            let mut info = self.info.lock().unwrap();
-            info.signature_count += count;
-            info.last_updated = Some(Local::now());
+    /// Handle completion of a running import.
+    pub fn poll(&mut self) {
+        let Some(ref rx) = self.import_task else {
+            return;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("Import failed unexpectedly".to_string()),
+        };
+        self.import_task = None;
+        self.last_import = Some(match result {
+            Ok(result) => {
+                log::info!("Signature import: {}", result);
+                (result.to_string(), false)
+            }
+            Err(e) => {
+                log::error!("Signature import failed: {}", e);
+                (format!("Import failed: {}", e), true)
+            }
+        });
+        self.refresh();
+    }
+
+    /// Render the Signatures view.
+    pub fn render(&mut self, ui: &mut Ui, theme: &Theme) {
+        ui.add_space(20.0);
+        ui.label(theme.heading("Signatures"));
+        ui.add_space(20.0);
+
+        ui.group(|ui| {
+            ui.label(theme.subheading("Signature Database"));
+            ui.add_space(10.0);
+
+            if let Some(ref error) = self.error {
+                ui.colored_label(theme.danger, error);
+            } else if let Some(ref info) = self.info {
+                egui::Grid::new("signature_info")
+                    .num_columns(2)
+                    .spacing([20.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Version:");
+                        ui.label(&info.version);
+                        ui.end_row();
+
+                        ui.label("Signatures:");
+                        ui.label(format!(
+                            "{} ({} hash, {} pattern)",
+                            info.signature_count, info.hash_count, info.pattern_count
+                        ));
+                        ui.end_row();
+
+                        ui.label("Last updated:");
+                        ui.label(
+                            info.last_updated
+                                .map(|t| {
+                                    t.with_timezone(&chrono::Local)
+                                        .format("%Y-%m-%d %H:%M")
+                                        .to_string()
+                                })
+                                .unwrap_or_else(|| "Never".to_string()),
+                        );
+                        ui.end_row();
+                    });
+                ui.add_space(5.0);
+                ui.label(theme.label(
+                    "Built-in EICAR, YARA and heuristic detection work without signatures.",
+                ));
+            }
+        });
+
+        ui.add_space(20.0);
+
+        ui.horizontal(|ui| {
+            let import = ui.add_enabled(
+                self.import_task.is_none(),
+                egui::Button::new("Import Signature File..."),
+            );
+            if import.clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_title("Import Signatures")
+                    .add_filter("Signature file", &["json"])
+                    .pick_file()
+                {
+                    self.start_import(path);
+                }
+            }
+            if ui.button("Refresh").clicked() {
+                self.refresh();
+            }
+            if self.import_task.is_some() {
+                ui.spinner();
+                ui.label("Importing...");
+            }
+        });
+
+        if let Some((ref message, is_error)) = self.last_import {
+            ui.add_space(10.0);
+            let color = if is_error {
+                theme.danger
+            } else {
+                theme.success
+            };
+            ui.colored_label(color, message);
         }
 
-        Ok(count)
-    }
-
-    /// Set the update URL.
-    #[allow(dead_code)]
-    pub fn set_update_url(&mut self, url: String) {
-        self.update_url = url;
+        ui.add_space(20.0);
+        ui.label(
+            RichText::new(
+                "Online signature updates are not available yet. Import a signature \
+                 file (JSON) to add signatures.",
+            )
+            .color(theme.text_secondary),
+        );
     }
 }
 
 impl Default for SignatureUpdater {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_updater_creation() {
-        let updater = SignatureUpdater::new();
-        assert_eq!(updater.current_version(), "1.0.0");
-    }
-
-    #[test]
-    fn test_initial_status() {
-        let updater = SignatureUpdater::new();
-        matches!(updater.status(), UpdateStatus::Idle);
     }
 }
