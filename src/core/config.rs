@@ -54,12 +54,19 @@ impl Config {
         let config_path = Self::default_config_path();
 
         if config_path.exists() {
-            match Self::load(&config_path) {
-                Ok(config) => return config,
+            return match Self::load(&config_path) {
+                Ok(config) => config,
                 Err(e) => {
-                    log::warn!("Failed to load config, using defaults: {}", e);
+                    // Keep the file: overwriting it would destroy settings
+                    // the user can still fix by hand.
+                    log::warn!(
+                        "Failed to load config {}, using defaults: {}",
+                        config_path.display(),
+                        e
+                    );
+                    Self::default()
                 }
-            }
+            };
         }
 
         let config = Self::default();

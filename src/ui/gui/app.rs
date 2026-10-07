@@ -616,6 +616,8 @@ impl PeroxideApp {
                 };
                 log::info!("{}", state.status);
                 state.threats_found = summary.detections.clone();
+                self.quarantined_paths =
+                    quarantined_among(&state.threats_found, &self.quarantine_items);
                 // Only exact signature matches are certain enough to act on
                 // unattended; pattern and heuristic matches are left for the
                 // user. Skip files already quarantined during the scan.
@@ -704,13 +706,7 @@ impl PeroxideApp {
         let vault_dir = self.config.quarantine.quarantine_dir();
         match QuarantineVault::open(&vault_dir).and_then(|vault| vault.list()) {
             Ok(items) => {
-                // A detected file is handled if the vault holds it and it is
-                // gone from disk; a new file at the same path is not.
-                self.quarantined_paths = items
-                    .iter()
-                    .map(|item| item.original_path.clone())
-                    .filter(|path| !path.exists())
-                    .collect();
+                self.quarantined_paths = quarantined_among(&self.scan_state.threats_found, &items);
                 self.quarantine_items = items;
                 self.quarantine_error = None;
             }
@@ -792,6 +788,20 @@ impl eframe::App for PeroxideApp {
             ctx.request_repaint_after(POLL_INTERVAL);
         }
     }
+}
+
+/// Detected files that have been dealt with: the vault holds a file from
+/// that path and it is gone from disk (a new file there is not handled).
+/// Only the shown detections are checked, so the UI thread never probes
+/// every vault item's path (a disconnected network drive would block).
+fn quarantined_among(detections: &[Detection], items: &[QuarantineItem]) -> HashSet<PathBuf> {
+    let vault_paths: HashSet<&PathBuf> = items.iter().map(|item| &item.original_path).collect();
+    detections
+        .iter()
+        .map(|d| &d.path)
+        .filter(|path| vault_paths.contains(path) && !path.exists())
+        .cloned()
+        .collect()
 }
 
 /// Load the most recent scan from history, with its detections.
