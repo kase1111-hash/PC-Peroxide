@@ -62,9 +62,16 @@ impl Theme {
     pub fn apply(&self, ctx: &egui::Context) {
         let mut style = (*ctx.style()).clone();
 
-        // Set visuals
+        // Start from egui's own light or dark visuals so everything the
+        // palette doesn't override (text field and button backgrounds) has
+        // matching contrast.
+        let dark_mode = self.background.r() < 128;
+        style.visuals = if dark_mode {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
         let visuals = &mut style.visuals;
-        visuals.dark_mode = self.background.r() < 128;
         visuals.override_text_color = Some(self.text_primary);
         visuals.widgets.noninteractive.bg_fill = self.surface;
         visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, self.border);

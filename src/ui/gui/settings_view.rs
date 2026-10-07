@@ -46,7 +46,8 @@ impl From<&Config> for EditedSettings {
         Self {
             skip_large_files_mb: config.scan.skip_large_files_mb,
             scan_archives: config.scan.scan_archives,
-            max_archive_depth: config.scan.max_archive_depth,
+            // Out-of-range values would be shown clamped but saved unchanged
+            max_archive_depth: config.scan.max_archive_depth.clamp(1, 10),
             follow_symlinks: config.scan.follow_symlinks,
             scan_threads: config.scan.scan_threads,
             auto_quarantine_critical: config.actions.auto_quarantine_critical,
@@ -183,9 +184,11 @@ impl SettingsView {
             // Skip large files
             ui.horizontal(|ui| {
                 ui.label("Skip files larger than:");
+                // Keep a larger value set elsewhere (e.g. `config set`) reachable
+                let max_mb = this.edited.skip_large_files_mb.max(1000);
                 if ui
                     .add(
-                        egui::Slider::new(&mut this.edited.skip_large_files_mb, 1..=1000)
+                        egui::Slider::new(&mut this.edited.skip_large_files_mb, 1..=max_mb)
                             .suffix(" MB"),
                     )
                     .changed()
@@ -355,6 +358,15 @@ impl SettingsView {
         };
 
         config.logging.log_level = self.edited.log_level.clone();
+
+        // A vault folder that cannot be used would only fail later, when
+        // a threat needs quarantining; opening it creates it if needed.
+        if config.quarantine.vault_path != self.config.quarantine.vault_path {
+            config.validate().map_err(|e| e.to_string())?;
+            let dir = config.quarantine.quarantine_dir();
+            crate::quarantine::QuarantineVault::open(&dir)
+                .map_err(|e| format!("Cannot use quarantine folder {}: {}", dir.display(), e))?;
+        }
 
         // Validate, then save to file
         let config_path = Config::default_config_path();

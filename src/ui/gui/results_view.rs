@@ -49,37 +49,44 @@ impl ResultsView {
     ) -> Option<ResultsAction> {
         let mut action = None;
 
-        ui.vertical(|ui| {
-            ui.add_space(20.0);
-            ui.horizontal(|ui| {
-                ui.add_space(20.0);
-                ui.label(self.theme.heading("Scan Results"));
-            });
-            ui.add_space(20.0);
-
-            if let Some(summary) = summary {
-                if summary.status == ScanStatus::Cancelled {
+        // The table plus the details panel can exceed the window height
+        egui::ScrollArea::vertical()
+            .id_source("results_page")
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.add_space(20.0);
                     ui.horizontal(|ui| {
                         ui.add_space(20.0);
-                        ui.colored_label(
+                        ui.label(self.theme.heading("Scan Results"));
+                    });
+                    ui.add_space(20.0);
+
+                    if let Some(summary) = summary {
+                        if summary.status == ScanStatus::Cancelled {
+                            ui.horizontal(|ui| {
+                                ui.add_space(20.0);
+                                ui.colored_label(
                             self.theme.warning,
                             "This scan was cancelled before it finished; results are partial.",
                         );
-                    });
-                    ui.add_space(10.0);
-                }
-                if let Some(a) = self.render_summary(ui, summary) {
-                    action = Some(a);
-                }
-                ui.add_space(20.0);
-                let partial = summary.status == ScanStatus::Cancelled;
-                if let Some(a) = self.render_detections(ui, threats, quarantined, busy, partial) {
-                    action = Some(a);
-                }
-            } else {
-                self.render_no_results(ui);
-            }
-        });
+                            });
+                            ui.add_space(10.0);
+                        }
+                        if let Some(a) = self.render_summary(ui, summary) {
+                            action = Some(a);
+                        }
+                        ui.add_space(20.0);
+                        let partial = summary.status == ScanStatus::Cancelled;
+                        if let Some(a) =
+                            self.render_detections(ui, threats, quarantined, busy, partial)
+                        {
+                            action = Some(a);
+                        }
+                    } else {
+                        self.render_no_results(ui);
+                    }
+                });
+            });
 
         action
     }

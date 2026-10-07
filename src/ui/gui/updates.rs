@@ -90,9 +90,22 @@ impl SignatureUpdater {
         };
         self.import_task = None;
         self.last_import = Some(match result {
+            // Nothing usable in the file: report it as a failure with reasons
+            Ok(result) if result.imported == 0 && result.skipped > 0 => {
+                log::error!("Signature import added nothing: {}", result);
+                let reasons: Vec<&str> = result.errors.iter().take(3).map(String::as_str).collect();
+                (
+                    format!(
+                        "No signatures imported ({} skipped): {}",
+                        result.skipped,
+                        reasons.join("; ")
+                    ),
+                    true,
+                )
+            }
             Ok(result) => {
                 log::info!("Signature import: {}", result);
-                (result.to_string(), false)
+                (result.to_string(), result.skipped > 0)
             }
             Err(e) => {
                 log::error!("Signature import failed: {}", e);

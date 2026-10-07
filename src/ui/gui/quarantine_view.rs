@@ -6,6 +6,24 @@ use super::app::QuarantineAction;
 use super::theme::Theme;
 use crate::quarantine::QuarantineItem;
 
+/// A quarantined item awaiting confirmation of an action.
+#[derive(Clone)]
+struct Pending {
+    id: String,
+    detection_name: String,
+    path: String,
+}
+
+impl Pending {
+    fn from_item(item: &QuarantineItem) -> Self {
+        Self {
+            id: item.id.clone(),
+            detection_name: item.detection_name.clone(),
+            path: item.original_path.display().to_string(),
+        }
+    }
+}
+
 /// Quarantine view state.
 pub struct QuarantineView {
     theme: Theme,
@@ -14,7 +32,9 @@ pub struct QuarantineView {
     /// Selected item for details
     selected_item: Option<String>,
     /// Show delete confirmation
-    confirm_delete: Option<String>,
+    confirm_delete: Option<Pending>,
+    /// Show restore confirmation
+    confirm_restore: Option<Pending>,
     /// Items to delete if "Clear All" is confirmed (those listed when it
     /// was clicked, so items added meanwhile are never deleted unseen)
     confirm_clear: Option<Vec<String>>,
@@ -30,9 +50,18 @@ impl QuarantineView {
             search_filter: String::new(),
             selected_item: None,
             confirm_delete: None,
+            confirm_restore: None,
             confirm_clear: None,
             busy: false,
         }
+    }
+
+    /// Whether a confirmation dialog is open (row actions are disabled so a
+    /// second click cannot silently change what is being confirmed).
+    fn confirming(&self) -> bool {
+        self.confirm_delete.is_some()
+            || self.confirm_restore.is_some()
+            || self.confirm_clear.is_some()
     }
 
     /// Use a different theme.
@@ -54,37 +83,40 @@ impl QuarantineView {
         let mut action = None;
         self.busy = busy;
 
-        ui.vertical(|ui| {
-            ui.add_space(20.0);
-            ui.horizontal(|ui| {
-                ui.add_space(20.0);
-                ui.label(self.theme.heading("Quarantine"));
-                ui.add_space(20.0);
-                if ui.button("Refresh").clicked() {
-                    action = Some(QuarantineAction::Refresh);
-                }
-            });
-            ui.add_space(20.0);
-
-            if let Some(error) = error {
-                ui.horizontal(|ui| {
+        // The table plus the details panel can exceed the window height
+        egui::ScrollArea::vertical()
+            .id_source("quarantine_page")
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
                     ui.add_space(20.0);
-                    ui.colored_label(self.theme.danger, error);
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        ui.label(self.theme.heading("Quarantine"));
+                        ui.add_space(20.0);
+                        if ui.button("Refresh").clicked() {
+                            action = Some(QuarantineAction::Refresh);
+                        }
+                    });
+                    ui.add_space(20.0);
+
+                    if let Some(error) = error {
+                        ui.horizontal(|ui| {
+                            ui.add_space(20.0);
+                            ui.colored_label(self.theme.danger, error);
+                        });
+                        ui.add_space(10.0);
+                    }
+
+                    // Summary
+                    if let Some(a) = self.render_summary(ui, items) {
+                        action = Some(a);
+                    }
+                    ui.add_space(20.0);
+
+                    // Items list (its actions go through confirmations)
+                    self.render_items(ui, items);
                 });
-                ui.add_space(10.0);
-            }
-
-            // Summary
-            if let Some(a) = self.render_summary(ui, items) {
-                action = Some(a);
-            }
-            ui.add_space(20.0);
-
-            // Items list
-            if let Some(a) = self.render_items(ui, items) {
-                action = Some(a);
-            }
-        });
+            });
 
         // Confirmations
         if let Some(a) = self.render_confirmations(ui) {
@@ -149,7 +181,7 @@ impl QuarantineView {
                 ui.vertical(|ui| {
                     if ui
                         .add_enabled(
-                            !self.busy,
+                            !self.busy && !self.confirming(),
                             egui::Button::new(RichText::new("Clear All").color(Color32::WHITE))
                                 .fill(self.theme.danger)
                                 .min_size(Vec2::new(120.0, 36.0)),
@@ -166,9 +198,7 @@ impl QuarantineView {
     }
 
     /// Render quarantine items list.
-    fn render_items(&mut self, ui: &mut Ui, items: &[QuarantineItem]) -> Option<QuarantineAction> {
-        let mut action = None;
-
+    fn render_items(&mut self, ui: &mut Ui, items: &[QuarantineItem]) {
         ui.horizontal(|ui| {
             ui.add_space(20.0);
             ui.label(self.theme.subheading("Quarantined Files"));
@@ -281,9 +311,10 @@ impl QuarantineView {
                                                 ui.label(format_size(item.original_size));
 
                                                 ui.horizontal(|ui| {
+                                                    let can_act = !self.busy && !self.confirming();
                                                     if ui
                                                         .add_enabled(
-                                                            !self.busy && item.restorable,
+                                                            can_act && item.restorable,
                                                             egui::Button::new("Restore"),
                                                         )
                                                         .on_hover_text(
@@ -291,13 +322,12 @@ impl QuarantineView {
                                                         )
                                                         .clicked()
                                                     {
-                                                        action = Some(QuarantineAction::Restore(
-                                                            item.id.clone(),
-                                                        ));
+                                                        self.confirm_restore =
+                                                            Some(Pending::from_item(item));
                                                     }
                                                     if ui
                                                         .add_enabled(
-                                                            !self.busy,
+                                                            can_act,
                                                             egui::Button::new(
                                                                 RichText::new("Delete")
                                                                     .color(self.theme.danger),
@@ -308,7 +338,8 @@ impl QuarantineView {
                                                         )
                                                         .clicked()
                                                     {
-                                                        self.confirm_delete = Some(item.id.clone());
+                                                        self.confirm_delete =
+                                                            Some(Pending::from_item(item));
                                                     }
                                                 });
                                                 ui.end_row();
@@ -329,8 +360,6 @@ impl QuarantineView {
                 });
             }
         }
-
-        action
     }
 
     /// Render item details.
@@ -400,7 +429,43 @@ impl QuarantineView {
         let mut action = None;
 
         // Delete confirmation
-        if let Some(ref id) = self.confirm_delete.clone() {
+        if let Some(pending) = self.confirm_restore.clone() {
+            egui::Window::new("Confirm Restore")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ui.ctx(), |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(10.0);
+                        ui.label(format!(
+                            "Restore this file, detected as {}?",
+                            pending.detection_name
+                        ));
+                        ui.label(RichText::new(&pending.path).monospace().size(11.0));
+                        ui.label(
+                            RichText::new("Only restore files you know are safe.")
+                                .color(self.theme.warning),
+                        );
+                        ui.add_space(20.0);
+
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancel").clicked() {
+                                self.confirm_restore = None;
+                            }
+                            ui.add_space(20.0);
+                            if ui
+                                .add_enabled(!self.busy, egui::Button::new("Restore"))
+                                .clicked()
+                            {
+                                action = Some(QuarantineAction::Restore(pending.id.clone()));
+                                self.confirm_restore = None;
+                            }
+                        });
+                    });
+                });
+        }
+
+        if let Some(pending) = self.confirm_delete.clone() {
             egui::Window::new("Confirm Delete")
                 .collapsible(false)
                 .resizable(false)
@@ -408,7 +473,11 @@ impl QuarantineView {
                 .show(ui.ctx(), |ui| {
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);
-                        ui.label("Are you sure you want to permanently delete this file?");
+                        ui.label(format!(
+                            "Permanently delete this file, detected as {}?",
+                            pending.detection_name
+                        ));
+                        ui.label(RichText::new(&pending.path).monospace().size(11.0));
                         ui.label(
                             RichText::new("This action cannot be undone.").color(self.theme.danger),
                         );
@@ -429,7 +498,7 @@ impl QuarantineView {
                                 )
                                 .clicked()
                             {
-                                action = Some(QuarantineAction::Delete(id.clone()));
+                                action = Some(QuarantineAction::Delete(pending.id.clone()));
                                 self.confirm_delete = None;
                             }
                         });

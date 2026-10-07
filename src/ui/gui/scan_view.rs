@@ -15,6 +15,9 @@ pub struct ScanView {
     selected_scan_type: ScanType,
     /// Custom paths input
     custom_paths_text: String,
+    /// Paths chosen with a picker, used as-is while the text still shows
+    /// them (a folder name may itself contain ';')
+    picked_paths: Option<(String, Vec<PathBuf>)>,
 }
 
 impl ScanView {
@@ -24,6 +27,7 @@ impl ScanView {
             theme,
             selected_scan_type: ScanType::Quick,
             custom_paths_text: String::new(),
+            picked_paths: None,
         }
     }
 
@@ -374,13 +378,21 @@ impl ScanView {
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join(";");
+        self.picked_paths = Some((self.custom_paths_text.clone(), paths.to_vec()));
     }
 
-    /// Parse the semicolon-separated custom path list.
+    /// The custom paths to scan: the picked paths if the text still shows
+    /// them, otherwise the typed semicolon-separated list. Surrounding
+    /// quotes (as added by Explorer's "Copy as path") are removed.
     fn custom_paths(&self) -> Vec<PathBuf> {
+        if let Some((ref text, ref paths)) = self.picked_paths {
+            if *text == self.custom_paths_text {
+                return paths.clone();
+            }
+        }
         self.custom_paths_text
             .split(';')
-            .map(str::trim)
+            .map(|s| s.trim().trim_matches('"').trim())
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
             .collect()
@@ -421,10 +433,19 @@ mod tests {
     #[test]
     fn test_custom_paths_parsing() {
         let mut view = ScanView::new(Theme::default());
-        view.custom_paths_text = " /a/b ; ;/c d/e;".to_string();
+        view.custom_paths_text = " /a/b ; ;\"/c d/e\";".to_string();
         assert_eq!(
             view.custom_paths(),
             [PathBuf::from("/a/b"), PathBuf::from("/c d/e")]
         );
+
+        // Picked paths are used as-is, even with ';' in a name
+        let picked = [PathBuf::from("/data/backups;old")];
+        view.set_custom_paths(&picked);
+        assert_eq!(view.custom_paths(), picked);
+
+        // Editing the text switches back to parsing it
+        view.custom_paths_text.push_str(";/tmp");
+        assert_eq!(view.custom_paths().len(), 3);
     }
 }

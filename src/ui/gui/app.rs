@@ -575,7 +575,11 @@ impl PeroxideApp {
                         progress.directories_scanned
                     ),
                     Some(total) => {
-                        format!("Scanning {} of {} files...", progress.files_scanned, total)
+                        format!(
+                            "Scanning {} of {} files...",
+                            progress.files_processed(),
+                            total
+                        )
                     }
                 };
             }
