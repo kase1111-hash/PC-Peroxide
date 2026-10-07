@@ -97,10 +97,9 @@ impl QuarantineMetadata {
         // SQLite quietly opens a file it cannot write read-only; refuse it
         // now rather than fail on the first change.
         if conn.is_readonly(rusqlite::DatabaseName::Main)? {
-            return Err(Error::Database(format!(
-                "{} is read-only for this account (it may have been created by another user or an elevated run); set quarantine.vault_path to a folder you can write to",
-                db_path.display()
-            )));
+            return Err(Error::DatabaseReadOnly {
+                path: db_path.to_path_buf(),
+            });
         }
         let metadata = Self { conn };
         metadata.initialize()?;
@@ -571,7 +570,8 @@ mod tests {
             .is_err()
         {
             let err = QuarantineMetadata::open(&db_path).err().expect("refused");
-            assert!(err.to_string().contains("read-only"), "{}", err);
+            assert!(matches!(err, Error::DatabaseReadOnly { .. }), "{}", err);
+            assert!(!err.suggestion().unwrap().contains("delet"));
         }
 
         #[allow(clippy::permissions_set_readonly_false)]

@@ -65,6 +65,12 @@ pub enum Error {
     #[error("Database operation failed: {0}")]
     Database(String),
 
+    #[error(
+        "{} is read-only for this account (it may have been created by another user or an elevated run)",
+        path.display()
+    )]
+    DatabaseReadOnly { path: PathBuf },
+
     #[error("Failed to initialize database: {0}")]
     DatabaseInit(String),
 
@@ -353,6 +359,11 @@ impl Error {
             Error::DatabaseInit(_) | Error::Database(_) => {
                 Some("Try deleting the database file and letting it be recreated")
             }
+            // Never suggest deleting this one: a vault database is the only
+            // record of what the vault holds.
+            Error::DatabaseReadOnly { .. } => Some(
+                "Run as the account that created it or give yourself write access; for the quarantine vault you can also set quarantine.vault_path to a folder you can write to",
+            ),
             Error::LlmUnavailable { .. } => {
                 Some("Ensure the LLM server (Ollama) is running: ollama serve")
             }
@@ -391,6 +402,7 @@ impl Error {
 
             Error::DatabaseSql(_)
             | Error::Database(_)
+            | Error::DatabaseReadOnly { .. }
             | Error::DatabaseInit(_)
             | Error::SignatureNotFound(_)
             | Error::SignatureLoad(_) => ErrorCategory::Database,

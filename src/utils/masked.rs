@@ -24,6 +24,9 @@ pub const fn mask<const N: usize>(text: &str) -> [u8; N] {
 /// Restores bytes produced by [`mask`].
 #[doc(hidden)]
 pub fn unmask(masked: &[u8]) -> Vec<u8> {
+    // Without black_box an optimised build folds the XOR of these constant
+    // bytes and stores the plain literal in the binary after all.
+    let masked = std::hint::black_box(masked);
     masked.iter().map(|b| b ^ KEY).collect()
 }
 

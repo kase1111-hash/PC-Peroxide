@@ -1011,7 +1011,12 @@ fn run_processes(
 
 /// Manage whitelist entries.
 fn run_whitelist(action: WhitelistAction, format: OutputFormat) -> Result<()> {
-    let manager = WhitelistManager::open(&WhitelistManager::default_path())?;
+    let path = WhitelistManager::default_path();
+    let manager = if matches!(action, WhitelistAction::List) {
+        WhitelistManager::open(&path)?
+    } else {
+        WhitelistManager::open_writable(&path)?
+    };
 
     match action {
         WhitelistAction::List => {

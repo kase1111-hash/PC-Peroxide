@@ -114,16 +114,21 @@ impl WhitelistManager {
         }
 
         let conn = Connection::open(db_path)?;
-        // SQLite quietly opens a file it cannot write read-only; refuse it
-        // now rather than fail on the first change.
-        if conn.is_readonly(rusqlite::DatabaseName::Main)? {
-            return Err(Error::Database(format!(
-                "{} is read-only for this account (it may have been created by another user or an elevated run)",
-                db_path.display()
-            )));
-        }
         let manager = Self { conn };
         manager.initialize()?;
+        Ok(manager)
+    }
+
+    /// Open the whitelist to change it. SQLite quietly opens a file it cannot
+    /// write read-only, which is fine for checking entries (scans, listing)
+    /// but would only fail on the first change; refuse it up front instead.
+    pub fn open_writable(db_path: &Path) -> Result<Self> {
+        let manager = Self::open(db_path)?;
+        if manager.conn.is_readonly(rusqlite::DatabaseName::Main)? {
+            return Err(Error::DatabaseReadOnly {
+                path: db_path.to_path_buf(),
+            });
+        }
         Ok(manager)
     }
 
@@ -748,5 +753,43 @@ mod tests {
             Some(WhitelistType::Detection)
         );
         assert_eq!(WhitelistType::from_db("invalid"), None);
+    }
+
+    #[test]
+    fn test_read_only_whitelist_is_still_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("whitelist.db");
+        let hash = "ab".repeat(32);
+        WhitelistManager::open_writable(&db_path)
+            .unwrap()
+            .add(&WhitelistEntry::by_hash(
+                "1".to_string(),
+                hash.clone(),
+                "test".to_string(),
+            ))
+            .unwrap();
+
+        let mut perms = std::fs::metadata(&db_path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&db_path, perms.clone()).unwrap();
+        // Root (or an administrator) can write regardless; nothing to test
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(&db_path)
+            .is_err()
+        {
+            // Scans can still honour the entries...
+            let manager = WhitelistManager::open(&db_path).unwrap();
+            assert!(manager.is_hash_whitelisted(&hash).unwrap());
+            // ...but changing it is refused up front
+            let err = WhitelistManager::open_writable(&db_path)
+                .err()
+                .expect("refused");
+            assert!(matches!(err, Error::DatabaseReadOnly { .. }), "{}", err);
+        }
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        std::fs::set_permissions(&db_path, perms).unwrap();
     }
 }

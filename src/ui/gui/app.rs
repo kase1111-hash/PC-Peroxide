@@ -1067,7 +1067,7 @@ fn perform_vault_op(config: Arc<Config>, op: VaultOp) -> VaultOpOutcome {
 
 /// Whitelist a file hash so the file is not flagged again.
 fn allow_hash(hash: &str, reason: &str) -> crate::core::error::Result<()> {
-    let whitelist = WhitelistManager::open(&WhitelistManager::default_path())?;
+    let whitelist = WhitelistManager::open_writable(&WhitelistManager::default_path())?;
     if whitelist.is_hash_whitelisted(hash)? {
         return Ok(());
     }

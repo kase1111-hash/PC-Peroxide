@@ -31,9 +31,13 @@ pub struct StringPattern {
     pub pattern: String,
     /// Pattern type
     pub pattern_type: PatternType,
-    /// Compiled regex (for regex and text patterns)
+    /// Compiled byte regex (for text, hex and wide patterns)
     #[serde(skip)]
     pub compiled: Option<Regex>,
+    /// Compiled regex patterns, matched against the data as (lossy) text so
+    /// that `.` and negated classes also match bytes that are not UTF-8
+    #[serde(skip)]
+    pub text_regex: Option<regex::Regex>,
     /// Compiled hex bytes (for hex patterns)
     #[serde(skip)]
     pub hex_bytes: Option<Vec<u8>>,
@@ -47,6 +51,7 @@ impl StringPattern {
             pattern: pattern.to_string(),
             pattern_type: PatternType::Text,
             compiled: None,
+            text_regex: None,
             hex_bytes: None,
         }
     }
@@ -58,6 +63,7 @@ impl StringPattern {
             pattern: pattern.to_string(),
             pattern_type: PatternType::TextNocase,
             compiled: None,
+            text_regex: None,
             hex_bytes: None,
         }
     }
@@ -69,6 +75,7 @@ impl StringPattern {
             pattern: hex.to_string(),
             pattern_type: PatternType::Hex,
             compiled: None,
+            text_regex: None,
             hex_bytes: None,
         }
     }
@@ -80,6 +87,7 @@ impl StringPattern {
             pattern: pattern.to_string(),
             pattern_type: PatternType::Regex,
             compiled: None,
+            text_regex: None,
             hex_bytes: None,
         }
     }
@@ -102,8 +110,8 @@ impl StringPattern {
                 );
             }
             PatternType::Regex => {
-                self.compiled = Some(
-                    Regex::new(&self.pattern)
+                self.text_regex = Some(
+                    regex::Regex::new(&self.pattern)
                         .map_err(|e| format!("Failed to compile regex: {}", e))?,
                 );
             }
@@ -153,7 +161,15 @@ impl StringPattern {
     pub fn matches(&self, data: &[u8]) -> Vec<usize> {
         let mut offsets = Vec::new();
 
-        // Every pattern type compiles to a regex over the raw bytes
+        if let Some(ref regex) = self.text_regex {
+            let text = String::from_utf8_lossy(data);
+            for m in regex.find_iter(&text) {
+                offsets.push(m.start());
+            }
+            return offsets;
+        }
+
+        // Literal patterns compile to a regex over the raw bytes
         if let Some(ref regex) = self.compiled {
             for m in regex.find_iter(data) {
                 offsets.push(m.start());
@@ -345,6 +361,24 @@ pub struct RuleMatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_patterns_match_binary_data() {
+        let data = [b'x', 0xFF, b'a', 0xFE, b'b', b'M', b'Z', 0x90, b'y'];
+
+        // A regex wildcard still matches a byte that is not UTF-8
+        let mut regex = StringPattern::regex("$r", "a.b");
+        regex.compile().unwrap();
+        assert_eq!(regex.matches(&data).len(), 1);
+
+        let mut text = StringPattern::text_nocase("$t", "mZ");
+        text.compile().unwrap();
+        assert_eq!(text.matches(&data), vec![5]);
+
+        let mut hex = StringPattern::hex("$h", "5A90");
+        hex.compile().unwrap();
+        assert_eq!(hex.matches(&data), vec![6]);
+    }
 
     #[test]
     fn test_text_pattern() {
