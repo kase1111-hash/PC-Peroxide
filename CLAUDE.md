@@ -181,3 +181,4 @@ EICAR test file is supported for detection testing.
 - Secure deletion uses 3-pass random overwrite
 - SQLite is used for signatures, quarantine metadata, and scan history
 - Optional LLM integration available (OpenAI, Ollama) for enhanced analysis
+- Write detection strings (YARA rule strings, memory patterns, suspicious API names) with `crate::masked!` / `crate::masked_bytes!` so the binary does not contain them in plain text and flag itself; `tests/self_scan.rs` checks this

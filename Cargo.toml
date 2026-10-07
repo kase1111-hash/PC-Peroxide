@@ -102,6 +102,17 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Unoptimised regex matching is very slow; optimising these crates keeps
+# debug builds (and the tests) usable for scanning.
+[profile.dev.package.regex-automata]
+opt-level = 3
+
+[profile.dev.package.aho-corasick]
+opt-level = 3
+
+[profile.dev.package.memchr]
+opt-level = 3
+
 [[bin]]
 name = "pc-peroxide"
 path = "src/main.rs"

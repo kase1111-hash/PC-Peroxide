@@ -205,7 +205,8 @@ impl std::fmt::Display for IndicatorCategory {
     }
 }
 
-/// Collection of predefined patterns for common threats.
+/// Collection of predefined patterns for common threats. Text patterns are
+/// masked (see `utils::masked`) so this binary does not match them.
 pub struct PatternDatabase;
 
 impl PatternDatabase {
@@ -242,30 +243,30 @@ impl PatternDatabase {
     pub fn rat_patterns() -> Vec<MemoryPattern> {
         vec![
             // Meterpreter
-            MemoryPattern::new("metsrv", b"metsrv")
+            MemoryPattern::new("metsrv", &crate::masked_bytes!("metsrv"))
                 .with_description("Meterpreter server")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
-            MemoryPattern::new("meterpreter", b"meterpreter")
+            MemoryPattern::new("meterpreter", &crate::masked_bytes!("meterpreter"))
                 .with_description("Meterpreter string")
                 .with_severity(80)
                 .with_category(PatternCategory::RemoteAccess),
             // Cobalt Strike
-            MemoryPattern::new("beacon", b"beacon")
+            MemoryPattern::new("beacon", &crate::masked_bytes!("beacon"))
                 .with_description("Cobalt Strike Beacon")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
-            MemoryPattern::new("cobaltstrike", b"cobaltstrike")
+            MemoryPattern::new("cobaltstrike", &crate::masked_bytes!("cobaltstrike"))
                 .with_description("Cobalt Strike string")
                 .with_severity(85)
                 .with_category(PatternCategory::RemoteAccess),
             // Empire
-            MemoryPattern::new("empire", b"empire")
+            MemoryPattern::new("empire", &crate::masked_bytes!("empire"))
                 .with_description("Empire framework")
                 .with_severity(75)
                 .with_category(PatternCategory::RemoteAccess),
             // Generic RAT indicators
-            MemoryPattern::new("reverse_shell", b"reverse shell")
+            MemoryPattern::new("reverse_shell", &crate::masked_bytes!("reverse shell"))
                 .with_description("Reverse shell string")
                 .with_severity(70)
                 .with_category(PatternCategory::RemoteAccess),
@@ -276,24 +277,24 @@ impl PatternDatabase {
     pub fn credential_patterns() -> Vec<MemoryPattern> {
         vec![
             // Mimikatz
-            MemoryPattern::new("mimikatz", b"mimikatz")
+            MemoryPattern::new("mimikatz", &crate::masked_bytes!("mimikatz"))
                 .with_description("Mimikatz tool")
                 .with_severity(95)
                 .with_category(PatternCategory::CredentialTheft),
-            MemoryPattern::new("sekurlsa", b"sekurlsa")
+            MemoryPattern::new("sekurlsa", &crate::masked_bytes!("sekurlsa"))
                 .with_description("Mimikatz sekurlsa module")
                 .with_severity(90)
                 .with_category(PatternCategory::CredentialTheft),
-            MemoryPattern::new("wdigest", b"wdigest")
+            MemoryPattern::new("wdigest", &crate::masked_bytes!("wdigest"))
                 .with_description("WDigest credential access")
                 .with_severity(60)
                 .with_category(PatternCategory::CredentialTheft),
-            MemoryPattern::new("lsadump", b"lsadump")
+            MemoryPattern::new("lsadump", &crate::masked_bytes!("lsadump"))
                 .with_description("LSA dump functionality")
                 .with_severity(85)
                 .with_category(PatternCategory::CredentialTheft),
             // LaZagne
-            MemoryPattern::new("lazagne", b"lazagne")
+            MemoryPattern::new("lazagne", &crate::masked_bytes!("lazagne"))
                 .with_description("LaZagne credential harvester")
                 .with_severity(85)
                 .with_category(PatternCategory::CredentialTheft),
@@ -304,25 +305,31 @@ impl PatternDatabase {
     pub fn injection_patterns() -> Vec<MemoryPattern> {
         vec![
             // Reflective loading
-            MemoryPattern::new("reflective_loader", b"ReflectiveLoader")
-                .with_description("Reflective DLL loader")
-                .with_severity(75)
-                .with_category(PatternCategory::Injection),
+            MemoryPattern::new(
+                "reflective_loader",
+                &crate::masked_bytes!("ReflectiveLoader"),
+            )
+            .with_description("Reflective DLL loader")
+            .with_severity(75)
+            .with_category(PatternCategory::Injection),
             // Process hollowing
-            MemoryPattern::new("ntunmapview", b"NtUnmapViewOfSection")
+            MemoryPattern::new("ntunmapview", &crate::masked_bytes!("NtUnmapViewOfSection"))
                 .with_description("NT unmap section (hollowing)")
                 .with_severity(50)
                 .with_category(PatternCategory::Injection),
             // APC injection
-            MemoryPattern::new("ntqueueapc", b"NtQueueApcThread")
+            MemoryPattern::new("ntqueueapc", &crate::masked_bytes!("NtQueueApcThread"))
                 .with_description("APC queue injection")
                 .with_severity(55)
                 .with_category(PatternCategory::Injection),
             // Thread hijacking
-            MemoryPattern::new("setthreadcontext", b"SetThreadContext")
-                .with_description("Thread context manipulation")
-                .with_severity(45)
-                .with_category(PatternCategory::Injection),
+            MemoryPattern::new(
+                "setthreadcontext",
+                &crate::masked_bytes!("SetThreadContext"),
+            )
+            .with_description("Thread context manipulation")
+            .with_severity(45)
+            .with_category(PatternCategory::Injection),
         ]
     }
 
@@ -330,33 +337,33 @@ impl PatternDatabase {
     pub fn ransomware_patterns() -> Vec<MemoryPattern> {
         vec![
             // Encryption indicators
-            MemoryPattern::new("cryptoapi", b"CryptEncrypt")
+            MemoryPattern::new("cryptoapi", &crate::masked_bytes!("CryptEncrypt"))
                 .with_description("Windows Crypto API encryption")
                 .with_severity(30)
                 .with_category(PatternCategory::Ransomware),
             // Ransom note patterns
-            MemoryPattern::new("readme_txt", b"README.txt")
+            MemoryPattern::new("readme_txt", &crate::masked_bytes!("README.txt"))
                 .with_description("Ransom note filename")
                 .with_severity(35)
                 .with_category(PatternCategory::Ransomware),
-            MemoryPattern::new("decrypt_files", b"decrypt your files")
+            MemoryPattern::new("decrypt_files", &crate::masked_bytes!("decrypt your files"))
                 .with_description("Ransom message")
                 .with_severity(70)
                 .with_category(PatternCategory::Ransomware),
-            MemoryPattern::new("bitcoin", b"bitcoin")
+            MemoryPattern::new("bitcoin", &crate::masked_bytes!("bitcoin"))
                 .with_description("Bitcoin reference")
                 .with_severity(25)
                 .with_category(PatternCategory::Ransomware),
-            MemoryPattern::new("onion", b".onion")
+            MemoryPattern::new("onion", &crate::masked_bytes!(".onion"))
                 .with_description("Tor hidden service")
                 .with_severity(40)
                 .with_category(PatternCategory::Ransomware),
             // Shadow copy deletion
-            MemoryPattern::new("vssadmin", b"vssadmin")
+            MemoryPattern::new("vssadmin", &crate::masked_bytes!("vssadmin"))
                 .with_description("VSS admin tool")
                 .with_severity(45)
                 .with_category(PatternCategory::Ransomware),
-            MemoryPattern::new("shadowcopy", b"shadowcopy")
+            MemoryPattern::new("shadowcopy", &crate::masked_bytes!("shadowcopy"))
                 .with_description("Shadow copy reference")
                 .with_severity(40)
                 .with_category(PatternCategory::Ransomware),

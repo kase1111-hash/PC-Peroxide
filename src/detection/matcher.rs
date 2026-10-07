@@ -8,9 +8,11 @@ use crate::utils::hash::{FileHashes, HashCalculator};
 use std::path::Path;
 use std::sync::Arc;
 
-/// EICAR test file standard string.
-/// This is the industry-standard test file for antivirus software.
-const EICAR_STRING: &str = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+/// EICAR test file standard string, the industry-standard test file for
+/// antivirus software. Masked, so that this binary is not itself an EICAR hit.
+fn eicar_string() -> Vec<u8> {
+    crate::masked_bytes!("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+}
 
 /// EICAR test file SHA256 hash.
 const EICAR_SHA256: &str = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";
@@ -48,7 +50,7 @@ impl HashMatcher {
             .count();
         let content_trimmed = &content[..trimmed];
 
-        content_trimmed == EICAR_STRING.as_bytes()
+        content_trimmed == eicar_string().as_slice()
     }
 
     /// Check if a file is the EICAR test file by hash.
@@ -488,7 +490,7 @@ mod tests {
     fn test_eicar_detection() {
         // Create EICAR test file
         let mut file = NamedTempFile::new().unwrap();
-        file.write_all(EICAR_STRING.as_bytes()).unwrap();
+        file.write_all(eicar_string().as_slice()).unwrap();
 
         let test_db = TestDb::new();
         let matcher = HashMatcher::new(test_db.db());
@@ -503,12 +505,12 @@ mod tests {
 
     #[test]
     fn test_eicar_content_check() {
-        assert!(HashMatcher::is_eicar_content(EICAR_STRING.as_bytes()));
+        assert!(HashMatcher::is_eicar_content(eicar_string().as_slice()));
         assert!(HashMatcher::is_eicar_content(
-            format!("{}\n", EICAR_STRING).as_bytes()
+            [eicar_string(), b"\n".to_vec()].concat().as_slice()
         ));
         assert!(HashMatcher::is_eicar_content(
-            format!("{}\r\n", EICAR_STRING).as_bytes()
+            [eicar_string(), b"\r\n".to_vec()].concat().as_slice()
         ));
         assert!(!HashMatcher::is_eicar_content(b"not eicar"));
     }
@@ -556,7 +558,7 @@ mod tests {
 
         // Test with EICAR
         let mut file = NamedTempFile::new().unwrap();
-        file.write_all(EICAR_STRING.as_bytes()).unwrap();
+        file.write_all(eicar_string().as_slice()).unwrap();
 
         let detection = engine.scan_file(file.path()).unwrap();
         assert!(detection.is_some());

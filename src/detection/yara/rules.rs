@@ -2,7 +2,7 @@
 //!
 //! Provides structures for defining detection rules similar to YARA format.
 
-use regex::Regex;
+use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -108,7 +108,9 @@ impl StringPattern {
                 );
             }
             PatternType::Hex => {
-                self.hex_bytes = Some(Self::parse_hex(&self.pattern)?);
+                let bytes = Self::parse_hex(&self.pattern)?;
+                self.compiled = Some(Self::bytes_regex(&bytes)?);
+                self.hex_bytes = Some(bytes);
             }
             PatternType::Wide => {
                 // Wide strings are UTF-16LE encoded
@@ -117,10 +119,21 @@ impl StringPattern {
                     .encode_utf16()
                     .flat_map(|c| c.to_le_bytes())
                     .collect();
+                self.compiled = Some(Self::bytes_regex(&wide)?);
                 self.hex_bytes = Some(wide);
             }
         }
         Ok(())
+    }
+
+    /// A regex matching exactly `bytes`, which is much faster on large inputs
+    /// than comparing at every offset.
+    fn bytes_regex(bytes: &[u8]) -> Result<Regex, String> {
+        let mut pattern = String::from("(?-u)");
+        for b in bytes {
+            pattern.push_str(&format!("\\x{:02X}", b));
+        }
+        Regex::new(&pattern).map_err(|e| format!("Failed to compile pattern: {}", e))
     }
 
     /// Parse hex string to bytes.
@@ -140,24 +153,19 @@ impl StringPattern {
     pub fn matches(&self, data: &[u8]) -> Vec<usize> {
         let mut offsets = Vec::new();
 
-        match self.pattern_type {
-            PatternType::Text | PatternType::TextNocase | PatternType::Regex => {
-                if let Some(ref regex) = self.compiled {
-                    // Try to match as UTF-8 text (lossy to handle binary data)
-                    let text = String::from_utf8_lossy(data);
-                    for m in regex.find_iter(&text) {
-                        offsets.push(m.start());
-                    }
-                }
+        // Every pattern type compiles to a regex over the raw bytes
+        if let Some(ref regex) = self.compiled {
+            for m in regex.find_iter(data) {
+                offsets.push(m.start());
             }
-            PatternType::Hex | PatternType::Wide => {
-                if let Some(ref bytes) = self.hex_bytes {
-                    // Search for byte sequence
-                    for i in 0..=data.len().saturating_sub(bytes.len()) {
-                        if data[i..].starts_with(bytes) {
-                            offsets.push(i);
-                        }
-                    }
+            return offsets;
+        }
+
+        // Bytes set without compile(): compare at every offset
+        if let Some(ref bytes) = self.hex_bytes {
+            for i in 0..=data.len().saturating_sub(bytes.len()) {
+                if data[i..].starts_with(bytes) {
+                    offsets.push(i);
                 }
             }
         }

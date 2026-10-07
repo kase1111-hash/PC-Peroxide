@@ -2,6 +2,7 @@
 
 pub mod hash;
 pub mod logging;
+pub mod masked;
 pub mod retry;
 
 pub use hash::HashCalculator;
