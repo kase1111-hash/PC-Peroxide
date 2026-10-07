@@ -11,6 +11,7 @@
 //! - Network connection scanning
 
 pub mod archive;
+pub mod background;
 pub mod browser;
 pub mod file;
 pub mod filetype;
@@ -21,6 +22,7 @@ pub mod progress;
 pub mod results;
 
 pub use archive::{ArchiveScanner, ArchiveType, ArchivedFile};
+pub use background::{BackgroundScan, ScanRequest};
 pub use browser::{
     BrowserExtension, BrowserScanResult, BrowserScanner, BrowserType, ExtensionRisk, HijackType,
 };

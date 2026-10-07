@@ -43,6 +43,9 @@ enum ScanResult {
     FileScanned { size: u64 },
 }
 
+/// Callback invoked for each reported (non-whitelisted) detection.
+type DetectionCallback = Box<dyn Fn(&Detection) + Send + Sync>;
+
 /// File system scanner.
 pub struct FileScanner {
     config: Arc<Config>,
@@ -50,6 +53,7 @@ pub struct FileScanner {
     cancelled: Arc<AtomicBool>,
     progress: Arc<ProgressTracker>,
     whitelist_path: PathBuf,
+    detection_callback: Option<DetectionCallback>,
 }
 
 impl FileScanner {
@@ -81,6 +85,7 @@ impl FileScanner {
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(ProgressTracker::new()),
             whitelist_path: WhitelistManager::default_path(),
+            detection_callback: None,
         }
     }
 
@@ -92,6 +97,7 @@ impl FileScanner {
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(ProgressTracker::new()),
             whitelist_path: WhitelistManager::default_path(),
+            detection_callback: None,
         }
     }
 
@@ -216,6 +222,14 @@ impl FileScanner {
         F: Fn(crate::scanner::progress::ScanProgress) + Send + Sync + 'static,
     {
         self.progress.set_callback(callback);
+    }
+
+    /// Set a callback invoked as each detection is reported during a scan.
+    pub fn set_detection_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Detection) + Send + Sync + 'static,
+    {
+        self.detection_callback = Some(Box::new(callback));
     }
 
     /// Cancel the current scan.
@@ -447,7 +461,7 @@ impl FileScanner {
                         .push_back((path.clone(), metadata.len()));
                 }
             } else if path.is_dir() {
-                self.collect_files(path, &file_queue)?;
+                summary.directories_scanned += self.collect_files(path, &file_queue)?;
             }
         }
 
@@ -456,6 +470,7 @@ impl FileScanner {
             .map_err(|_| Error::lock_poisoned("file queue (count)"))?
             .len() as u64;
         log::info!("Found {} files to scan", total_files);
+        self.progress.set_total_files(total_files);
 
         // Set up channels for results
         let (tx, mut rx) = mpsc::channel::<ScanResult>(1000);
@@ -469,6 +484,7 @@ impl FileScanner {
             let engine = self.detection_engine.clone();
             let config = Arc::clone(&self.config);
             let cancelled = Arc::clone(&self.cancelled);
+            let progress = Arc::clone(&self.progress);
             let tx = tx.clone();
 
             let handle = tokio::spawn(async move {
@@ -492,6 +508,7 @@ impl FileScanner {
                     if cancelled.load(Ordering::SeqCst) {
                         break;
                     }
+                    progress.set_current_path(Some(path.clone()));
 
                     // Scan the file
                     let result = Self::scan_file_sync(&path, size, engine.as_ref(), &config);
@@ -535,6 +552,9 @@ impl FileScanner {
                         detection.threat_name,
                         detection.path
                     );
+                    if let Some(ref callback) = self.detection_callback {
+                        callback(&detection);
+                    }
                     summary.threats_found += 1;
                     summary.detections.push(detection);
                     self.progress.increment_threats();
@@ -576,12 +596,14 @@ impl FileScanner {
         Ok(summary)
     }
 
-    /// Collect files from a directory into the queue.
+    /// Collect files from a directory into the queue, returning the number of
+    /// directories visited.
     fn collect_files(
         &self,
         path: &Path,
         queue: &Arc<Mutex<VecDeque<(PathBuf, u64)>>>,
-    ) -> Result<()> {
+    ) -> Result<u64> {
+        let mut directories = 0;
         let walker = WalkDir::new(path)
             .follow_links(self.config.scan.follow_symlinks)
             .into_iter()
@@ -598,6 +620,15 @@ impl FileScanner {
             };
 
             let file_path = entry.path();
+
+            if entry.file_type().is_dir() {
+                // Lets a UI show discovery progress before scanning starts.
+                directories += 1;
+                self.progress.increment_directories();
+                self.progress
+                    .set_current_path(Some(file_path.to_path_buf()));
+                continue;
+            }
 
             if !file_path.is_file() {
                 continue;
@@ -627,7 +658,7 @@ impl FileScanner {
             }
         }
 
-        Ok(())
+        Ok(directories)
     }
 
     /// Scan a single file synchronously (for worker threads).
