@@ -333,11 +333,12 @@ impl Default for QuarantineConfig {
 }
 
 impl QuarantineConfig {
-    /// Get the effective quarantine directory.
+    /// Get the effective quarantine vault directory: `vault_path` if set,
+    /// otherwise the platform default where the vault has always lived.
     pub fn quarantine_dir(&self) -> PathBuf {
         self.vault_path
             .clone()
-            .unwrap_or_else(|| Config::data_dir().join("quarantine"))
+            .unwrap_or_else(crate::quarantine::get_quarantine_path)
     }
 }
 
@@ -424,6 +425,17 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_quarantine_dir() {
+        let mut config = QuarantineConfig::default();
+        assert_eq!(
+            config.quarantine_dir(),
+            crate::quarantine::get_quarantine_path()
+        );
+        config.vault_path = Some(PathBuf::from("/custom/vault"));
+        assert_eq!(config.quarantine_dir(), PathBuf::from("/custom/vault"));
     }
 
     #[test]

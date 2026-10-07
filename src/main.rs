@@ -6,9 +6,7 @@ use pc_peroxide::core::config::Config;
 use pc_peroxide::core::error::Result;
 use pc_peroxide::core::reporting::{create_cli_error_report, error_to_exit_code};
 use pc_peroxide::detection::SignatureDatabase;
-use pc_peroxide::quarantine::{
-    get_quarantine_path, QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType,
-};
+use pc_peroxide::quarantine::{QuarantineVault, WhitelistEntry, WhitelistManager, WhitelistType};
 use pc_peroxide::scanner::{
     BrowserScanner, BrowserType, ConsoleProgressReporter, FileScanner, NetworkScanner,
     PersistenceScanner, ProcessScanner, ScanResultStore,
@@ -88,7 +86,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             )
             .await;
         }
-        Some(Commands::Quarantine { action }) => run_quarantine(action, cli.format).await,
+        Some(Commands::Quarantine { action }) => run_quarantine(action, &config, cli.format).await,
         Some(Commands::Update { force, import }) => run_update(force, import).await,
         Some(Commands::Config { action }) => run_config(action, &config),
         Some(Commands::History { action }) => run_history(action, cli.format),
@@ -294,8 +292,12 @@ fn format_duration(seconds: i64) -> String {
 }
 
 /// Manage quarantine.
-async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Result<()> {
-    let vault = QuarantineVault::open_default()?;
+async fn run_quarantine(
+    action: QuarantineAction,
+    config: &Config,
+    format: OutputFormat,
+) -> Result<()> {
+    let vault = QuarantineVault::open(&config.quarantine.quarantine_dir())?;
 
     match action {
         QuarantineAction::List => {
@@ -432,7 +434,7 @@ async fn run_quarantine(action: QuarantineAction, format: OutputFormat) -> Resul
                         format_bytes(stats.total_original_size)
                     );
                     println!("Vault Size:       {}", format_bytes(stats.vault_size));
-                    println!("Vault Location:   {}", get_quarantine_path().display());
+                    println!("Vault Location:   {}", vault.base_path().display());
 
                     if !stats.categories.is_empty() {
                         println!();
@@ -705,7 +707,10 @@ fn run_info(config: &Config) -> Result<()> {
     );
     println!("Data Directory:   {}", Config::data_dir().display());
     println!("Log Directory:    {}", config.logging.log_dir().display());
-    println!("Quarantine Path:  {}", get_quarantine_path().display());
+    println!(
+        "Quarantine Path:  {}",
+        config.quarantine.quarantine_dir().display()
+    );
     println!();
     println!("Detection Settings:");
     println!(
