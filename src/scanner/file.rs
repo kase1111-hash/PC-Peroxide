@@ -580,6 +580,7 @@ impl FileScanner {
 
         if self.is_cancelled() {
             summary.status = ScanStatus::Cancelled;
+            summary.end_time = Some(chrono::Utc::now());
         } else {
             summary.complete();
         }

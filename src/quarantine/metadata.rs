@@ -353,6 +353,16 @@ impl QuarantineMetadata {
         )?;
         Ok(count > 0)
     }
+
+    /// Check whether this content from this path is already quarantined.
+    pub fn exists_by_hash_and_path(&self, hash: &str, path: &Path) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM quarantine_items WHERE hash_sha256 = ?1 AND original_path = ?2",
+            rusqlite::params![hash, path.to_string_lossy()],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
 }
 
 #[cfg(test)]

@@ -113,8 +113,9 @@ impl QuarantineVault {
             }
         };
 
-        // Check if already quarantined
-        match self.metadata.exists_by_hash(&hash) {
+        // Check if this file is already quarantined. Identical copies at
+        // other paths (malware often copies itself) must still be handled.
+        match self.metadata.exists_by_hash_and_path(&hash, path) {
             Ok(true) => {
                 return QuarantineResult::failure(
                     path.to_path_buf(),
@@ -238,6 +239,17 @@ impl QuarantineVault {
         let restore_path = dest
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| item.original_path.clone());
+
+        // Never overwrite a file that has since appeared at the destination
+        if restore_path.exists() {
+            return RestoreResult::failure(
+                id.to_string(),
+                format!(
+                    "A file already exists at {}; move it or restore to another path",
+                    restore_path.display()
+                ),
+            );
+        }
 
         // Decrypt and restore
         if let Err(e) = self.encryption.decrypt_file(&vault_path, &restore_path) {
@@ -479,10 +491,36 @@ mod tests {
         let result1 = vault.quarantine(&file1, "Test", "test", 50, false);
         assert!(result1.success);
 
-        // Try to quarantine duplicate
-        let result2 = vault.quarantine(&file2, "Test", "test", 50, false);
-        assert!(!result2.success);
-        assert!(result2.error.unwrap().contains("already quarantined"));
+        // The same file again is a duplicate
+        let again = vault.quarantine(&file1, "Test", "test", 50, false);
+        assert!(!again.success);
+        assert!(again.error.unwrap().contains("already quarantined"));
+
+        // An identical copy elsewhere is quarantined and removed too
+        let result2 = vault.quarantine(&file2, "Test", "test", 50, true);
+        assert!(result2.success, "{:?}", result2.error);
+        assert!(!file2.exists());
+        assert_eq!(vault.count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_restore_does_not_overwrite() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault = QuarantineVault::open(&temp_dir.path().join("vault")).unwrap();
+        let files_dir = temp_dir.path().join("files");
+        fs::create_dir_all(&files_dir).unwrap();
+
+        let file_path = create_test_file(&files_dir, "setup.exe", b"old malware");
+        let result = vault.quarantine(&file_path, "Test", "test", 50, true);
+        assert!(result.success);
+
+        // A new, legitimate file appears at the same path
+        fs::write(&file_path, b"new legitimate file").unwrap();
+        let restore = vault.restore(&result.id);
+        assert!(!restore.success);
+        assert!(restore.error.unwrap().contains("already exists"));
+        assert_eq!(fs::read(&file_path).unwrap(), b"new legitimate file");
+        assert_eq!(vault.count().unwrap(), 1);
     }
 
     #[test]
