@@ -344,8 +344,8 @@ pub enum HistoryAction {
         output: PathBuf,
 
         /// Export format
-        #[arg(short, long, default_value = "html")]
-        format: ExportFormat,
+        #[arg(short = 'f', long, default_value = "html")]
+        export_format: ExportFormat,
     },
 
     /// Show aggregate statistics
@@ -385,5 +385,31 @@ mod tests {
         };
         assert!(!cli.verbose);
         assert!(!cli.silent);
+    }
+
+    #[test]
+    fn test_cli_definition_is_valid() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn test_history_export_parses() {
+        // `--format` is a global flag, so the export format needs its own name.
+        for (args, expected) in [
+            (vec![], ExportFormat::Html),
+            (vec!["-f", "pdf"], ExportFormat::Pdf),
+            (vec!["--export-format", "csv"], ExportFormat::Csv),
+        ] {
+            let mut argv = vec!["pc-peroxide", "history", "export", "latest", "-o", "out"];
+            argv.extend(args);
+            let cli = Cli::try_parse_from(argv).unwrap();
+            match cli.command {
+                Some(Commands::History {
+                    action: HistoryAction::Export { export_format, .. },
+                }) => assert_eq!(export_format, expected),
+                other => panic!("unexpected parse: {:?}", other),
+            }
+        }
     }
 }

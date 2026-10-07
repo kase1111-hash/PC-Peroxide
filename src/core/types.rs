@@ -52,7 +52,7 @@ impl Severity {
     /// Parse from string.
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "low" => Some(Severity::Low),
+            "info" | "informational" | "low" => Some(Severity::Low),
             "medium" => Some(Severity::Medium),
             "high" => Some(Severity::High),
             "critical" => Some(Severity::Critical),

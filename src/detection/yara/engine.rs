@@ -154,7 +154,7 @@ impl YaraEngine {
         self.add_rule(
             YaraRule::new("EICAR_TestFile")
                 .with_description("EICAR test file")
-                .with_severity("info")
+                .with_severity("low")
                 .with_category("test")
                 .with_string(StringPattern::text(
                     "$eicar",
@@ -307,6 +307,22 @@ mod tests {
 
         assert!(!matches.is_empty());
         assert!(matches.iter().any(|m| m.rule_name == "EICAR_TestFile"));
+    }
+
+    #[test]
+    fn test_builtin_rule_severities_are_recognized() {
+        // An unrecognized severity is reported as HIGH, so every built-in
+        // rule must use a level the detection pipeline understands.
+        let engine = YaraEngine::with_default_rules().unwrap();
+        for rule in &engine.rules {
+            let severity = rule.meta.severity.as_deref().unwrap_or_default();
+            assert!(
+                crate::core::types::Severity::parse(severity).is_some(),
+                "rule {} has unrecognized severity {:?}",
+                rule.name,
+                severity
+            );
+        }
     }
 
     #[test]
