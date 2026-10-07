@@ -110,13 +110,13 @@ impl ScanView {
                             ui.add_space(30.0);
 
                             ui.label(self.theme.label("Threats found:"));
-                            let threat_color = if state.threats_found.is_empty() {
+                            let threat_color = if state.live_threats.is_empty() {
                                 self.theme.success
                             } else {
                                 self.theme.danger
                             };
                             ui.label(
-                                RichText::new(state.threats_found.len().to_string())
+                                RichText::new(state.live_threats.len().to_string())
                                     .size(18.0)
                                     .color(threat_color)
                                     .strong(),
@@ -160,7 +160,7 @@ impl ScanView {
         });
 
         // Threat list during scan
-        if !state.threats_found.is_empty() {
+        if !state.live_threats.is_empty() {
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
@@ -172,7 +172,7 @@ impl ScanView {
                 egui::ScrollArea::vertical()
                     .max_height(200.0)
                     .show(ui, |ui| {
-                        for threat in &state.threats_found {
+                        for threat in &state.live_threats {
                             ui.horizontal(|ui| {
                                 let severity_color =
                                     self.theme.severity_color(&threat.severity.to_string());

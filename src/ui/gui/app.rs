@@ -45,7 +45,9 @@ pub struct ScanState {
     pub scan_type: ScanType,
     /// Status message
     pub status: String,
-    /// Threats found by the running or last scan
+    /// Threats found so far by the running scan
+    pub live_threats: Vec<Detection>,
+    /// Threats found by the last completed scan (`last_scan`)
     pub threats_found: Vec<Detection>,
     /// Completed scan summary
     pub last_scan: Option<ScanSummary>,
@@ -63,6 +65,7 @@ impl Default for ScanState {
             current_file: String::new(),
             scan_type: ScanType::Quick,
             status: "Ready".to_string(),
+            live_threats: Vec::new(),
             threats_found: Vec::new(),
             last_scan: None,
         }
@@ -83,7 +86,8 @@ enum VaultOp {
     AutoQuarantine(Vec<Detection>),
     Restore(String),
     Delete(String),
-    DeleteAll,
+    /// Delete these items (the ones the user confirmed)
+    DeleteAll(Vec<String>),
 }
 
 /// Result of a [`VaultOp`].
@@ -114,9 +118,12 @@ pub struct PeroxideApp {
     quarantine_error: Option<String>,
     /// Running quarantine vault operation, if any
     vault_task: Option<Receiver<VaultOpOutcome>>,
+    /// The window was asked to close while vault operations were pending
+    close_when_idle: bool,
     /// Vault operations waiting for the running one to finish
     queued_vault_ops: VecDeque<VaultOp>,
-    /// Files quarantined from the current results
+    /// Detected files that are now in the vault (derived from the vault, so
+    /// it survives restarts)
     quarantined_paths: HashSet<PathBuf>,
     /// Message shown in the top bar
     notice: Option<Notice>,
@@ -165,6 +172,7 @@ impl PeroxideApp {
             quarantine_items: Vec::new(),
             quarantine_error: None,
             vault_task: None,
+            close_when_idle: false,
             queued_vault_ops: VecDeque::new(),
             quarantined_paths: HashSet::new(),
             notice: None,
@@ -419,8 +427,8 @@ impl PeroxideApp {
                             QuarantineAction::Delete(id) => {
                                 self.run_vault_op(VaultOp::Delete(id));
                             }
-                            QuarantineAction::DeleteAll => {
-                                self.run_vault_op(VaultOp::DeleteAll);
+                            QuarantineAction::DeleteAll(ids) => {
+                                self.run_vault_op(VaultOp::DeleteAll(ids));
                             }
                             QuarantineAction::Refresh => {
                                 self.refresh_quarantine();
@@ -519,11 +527,12 @@ impl PeroxideApp {
         ));
 
         self.notice = None;
-        self.quarantined_paths.clear();
+        // The previous results stay in place until the new scan succeeds.
         self.scan_state = ScanState {
             is_scanning: true,
             scan_type,
             status: format!("Starting {}...", scan_type),
+            threats_found: std::mem::take(&mut self.scan_state.threats_found),
             last_scan: self.scan_state.last_scan.take(),
             ..ScanState::default()
         };
@@ -553,13 +562,12 @@ impl PeroxideApp {
             state.directories_found = progress.directories_scanned;
             state.current_file = progress
                 .current_path
+                .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
-            state.progress = match progress.total_files {
-                Some(0) => 1.0,
-                Some(total) => (progress.files_scanned as f32 / total as f32).min(1.0),
-                None => 0.0,
-            };
+            state.progress = progress
+                .percentage()
+                .map_or(0.0, |pct| (pct / 100.0) as f32);
             if !state.cancelling {
                 state.status = match progress.total_files {
                     None => format!(
@@ -571,8 +579,8 @@ impl PeroxideApp {
                     }
                 };
             }
-            if progress.threats_found as usize != state.threats_found.len() {
-                state.threats_found = scan.detections();
+            if progress.threats_found as usize != state.live_threats.len() {
+                state.live_threats = scan.detections();
             }
         }
 
@@ -583,6 +591,7 @@ impl PeroxideApp {
         state.is_scanning = false;
         state.cancelling = false;
         state.current_file.clear();
+        state.live_threats.clear();
 
         match outcome {
             Ok(summary) => {
@@ -598,10 +607,14 @@ impl PeroxideApp {
                 };
                 log::info!("{}", state.status);
                 state.threats_found = summary.detections.clone();
+                // Skip files the user already quarantined during the scan
                 let critical: Vec<Detection> = summary
                     .detections
                     .iter()
-                    .filter(|d| d.severity == Severity::Critical)
+                    .filter(|d| {
+                        d.severity == Severity::Critical
+                            && !self.quarantined_paths.contains(&d.path)
+                    })
                     .cloned()
                     .collect();
                 state.last_scan = Some(summary);
@@ -679,6 +692,13 @@ impl PeroxideApp {
         let vault_dir = self.config.quarantine.quarantine_dir();
         match QuarantineVault::open(&vault_dir).and_then(|vault| vault.list()) {
             Ok(items) => {
+                // A detected file is handled if the vault holds it and it is
+                // gone from disk; a new file at the same path is not.
+                self.quarantined_paths = items
+                    .iter()
+                    .map(|item| item.original_path.clone())
+                    .filter(|path| !path.exists())
+                    .collect();
                 self.quarantine_items = items;
                 self.quarantine_error = None;
             }
@@ -743,8 +763,20 @@ impl eframe::App for PeroxideApp {
         self.render_content(ctx);
         self.render_about(ctx);
 
+        // Don't let closing the window kill a quarantine, restore or delete
+        // half-way; close once the queue has drained.
+        let vault_busy = self.vault_task.is_some() || !self.queued_vault_ops.is_empty();
+        if ctx.input(|i| i.viewport().close_requested()) && vault_busy {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.close_when_idle = true;
+            self.set_notice("Finishing quarantine operations before closing...", false);
+        }
+        if self.close_when_idle && !vault_busy {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
         // Keep polling background work without spinning the CPU
-        if self.scan.is_some() || self.vault_task.is_some() || self.updater.is_busy() {
+        if self.scan.is_some() || vault_busy || self.updater.is_busy() {
             ctx.request_repaint_after(POLL_INTERVAL);
         }
     }
@@ -819,6 +851,10 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
             let mut quarantined = Vec::new();
             let mut errors = Vec::new();
             for detection in detections {
+                // Already moved (e.g. quarantined by hand meanwhile)
+                if !detection.path.exists() {
+                    continue;
+                }
                 match quarantine_detection(&vault, &detection) {
                     Ok(_) => quarantined.push(detection.path),
                     Err(message) => {
@@ -829,7 +865,10 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
             }
             VaultOpOutcome {
                 message: if errors.is_empty() {
-                    format!("Automatically quarantined {} critical threat(s)", total)
+                    format!(
+                        "Automatically quarantined {} critical threat(s)",
+                        quarantined.len()
+                    )
                 } else {
                     format!(
                         "Automatically quarantined {} of {} critical threat(s); {}",
@@ -857,18 +896,15 @@ fn perform_vault_op(vault_dir: &std::path::Path, op: VaultOp) -> VaultOpOutcome 
             Ok(()) => done("Deleted quarantined item".to_string()),
             Err(e) => fail(format!("Failed to delete quarantined item: {}", e)),
         },
-        VaultOp::DeleteAll => {
-            let items = match vault.list() {
-                Ok(items) => items,
-                Err(e) => return fail(format!("Cannot list quarantine: {}", e)),
-            };
-            let total = items.len();
-            let failed = items
+        VaultOp::DeleteAll(ids) => {
+            let total = ids.len();
+            let failed = ids
                 .iter()
-                .filter(|item| match vault.delete(&item.id) {
-                    Ok(()) => false,
+                .filter(|id| match vault.delete(id) {
+                    // Already gone, e.g. restored or deleted meanwhile
+                    Ok(()) | Err(Error::QuarantineItemNotFound(_)) => false,
                     Err(e) => {
-                        log::error!("Failed to delete quarantine item {}: {}", item.id, e);
+                        log::error!("Failed to delete quarantine item {}: {}", id, e);
                         true
                     }
                 })
@@ -912,7 +948,7 @@ pub enum ResultsAction {
 pub enum QuarantineAction {
     Restore(String),
     Delete(String),
-    DeleteAll,
+    DeleteAll(Vec<String>),
     Refresh,
 }
 

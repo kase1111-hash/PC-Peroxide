@@ -72,7 +72,8 @@ impl ResultsView {
                     action = Some(a);
                 }
                 ui.add_space(20.0);
-                if let Some(a) = self.render_detections(ui, threats, quarantined, busy) {
+                let partial = summary.status == ScanStatus::Cancelled;
+                if let Some(a) = self.render_detections(ui, threats, quarantined, busy, partial) {
                     action = Some(a);
                 }
             } else {
@@ -164,6 +165,7 @@ impl ResultsView {
         threats: &[Detection],
         quarantined: &HashSet<PathBuf>,
         busy: bool,
+        partial: bool,
     ) -> Option<ResultsAction> {
         let mut action = None;
 
@@ -267,7 +269,12 @@ impl ResultsView {
                                         .size(18.0)
                                         .color(self.theme.success),
                                 );
-                                ui.label(self.theme.subheading("Your system appears to be clean."));
+                                // A cancelled scan says nothing about the files it skipped
+                                ui.label(self.theme.subheading(if partial {
+                                    "None of the files scanned before cancelling were flagged."
+                                } else {
+                                    "None of the scanned files were flagged."
+                                }));
                             } else {
                                 ui.label(self.theme.subheading("No threats match your filter."));
                             }

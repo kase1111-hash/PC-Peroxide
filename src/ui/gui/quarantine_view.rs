@@ -15,8 +15,9 @@ pub struct QuarantineView {
     selected_item: Option<String>,
     /// Show delete confirmation
     confirm_delete: Option<String>,
-    /// Show clear all confirmation
-    confirm_clear: bool,
+    /// Items to delete if "Clear All" is confirmed (those listed when it
+    /// was clicked, so items added meanwhile are never deleted unseen)
+    confirm_clear: Option<Vec<String>>,
     /// Whether a vault operation is running (actions are disabled)
     busy: bool,
 }
@@ -29,7 +30,7 @@ impl QuarantineView {
             search_filter: String::new(),
             selected_item: None,
             confirm_delete: None,
-            confirm_clear: false,
+            confirm_clear: None,
             busy: false,
         }
     }
@@ -155,7 +156,7 @@ impl QuarantineView {
                         )
                         .clicked()
                     {
-                        self.confirm_clear = true;
+                        self.confirm_clear = Some(items.iter().map(|i| i.id.clone()).collect());
                     }
                 });
             }
@@ -419,7 +420,8 @@ impl QuarantineView {
                             }
                             ui.add_space(20.0);
                             if ui
-                                .add(
+                                .add_enabled(
+                                    !self.busy,
                                     egui::Button::new(
                                         RichText::new("Delete").color(Color32::WHITE),
                                     )
@@ -436,7 +438,7 @@ impl QuarantineView {
         }
 
         // Clear all confirmation
-        if self.confirm_clear {
+        if let Some(ids) = self.confirm_clear.clone() {
             egui::Window::new("Confirm Clear All")
                 .collapsible(false)
                 .resizable(false)
@@ -444,7 +446,10 @@ impl QuarantineView {
                 .show(ui.ctx(), |ui| {
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);
-                        ui.label("Are you sure you want to delete ALL quarantined files?");
+                        ui.label(format!(
+                            "Are you sure you want to permanently delete {} quarantined file(s)?",
+                            ids.len()
+                        ));
                         ui.label(
                             RichText::new("This action cannot be undone.").color(self.theme.danger),
                         );
@@ -452,11 +457,12 @@ impl QuarantineView {
 
                         ui.horizontal(|ui| {
                             if ui.button("Cancel").clicked() {
-                                self.confirm_clear = false;
+                                self.confirm_clear = None;
                             }
                             ui.add_space(20.0);
                             if ui
-                                .add(
+                                .add_enabled(
+                                    !self.busy,
                                     egui::Button::new(
                                         RichText::new("Delete All").color(Color32::WHITE),
                                     )
@@ -464,8 +470,8 @@ impl QuarantineView {
                                 )
                                 .clicked()
                             {
-                                action = Some(QuarantineAction::DeleteAll);
-                                self.confirm_clear = false;
+                                action = Some(QuarantineAction::DeleteAll(ids.clone()));
+                                self.confirm_clear = None;
                             }
                         });
                     });
