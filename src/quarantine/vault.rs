@@ -120,28 +120,39 @@ impl QuarantineVault {
             }
         };
 
-        // When the original is kept, quarantining the same file again would
-        // only add a duplicate item. When it is removed, a matching item means
-        // the file was dropped again (e.g. by persistence) and must be handled.
-        let duplicate = if delete_original {
-            Ok(false)
-        } else {
-            self.metadata.exists_by_hash_and_path(&hash, path)
-        };
-        match duplicate {
-            Ok(true) => {
-                return QuarantineResult::failure(
-                    path.to_path_buf(),
-                    "File already quarantined".to_string(),
-                );
+        // The vault may already hold this content from this path: the same
+        // file quarantined with the original kept, a retry after the original
+        // could not be removed, or the file dropped again by persistence.
+        // Its content is already preserved, so only remove this copy.
+        match self.metadata.find_by_hash_and_path(&hash, path) {
+            Ok(Some(existing)) => {
+                let vault_path = self.items_path().join(&existing.vault_filename);
+                if !delete_original {
+                    return QuarantineResult::failure(
+                        path.to_path_buf(),
+                        "File already quarantined".to_string(),
+                    );
+                }
+                return match self.operations.secure_delete(path) {
+                    Ok(()) => QuarantineResult::success(existing.id, path.to_path_buf(), vault_path),
+                    Err(e) => QuarantineResult::success_with_warning(
+                        existing.id,
+                        path.to_path_buf(),
+                        vault_path,
+                        format!(
+                            "File is in quarantine but the original could not be deleted: {}. Manual removal required.",
+                            e
+                        ),
+                    ),
+                };
             }
+            Ok(None) => {}
             Err(e) => {
                 return QuarantineResult::failure(
                     path.to_path_buf(),
                     format!("Database error: {}", e),
                 );
             }
-            _ => {}
         }
 
         // Get file size
@@ -531,11 +542,13 @@ mod tests {
                 .success
         );
 
-        // Persistence writes the identical file back to the same path
+        // Persistence writes the identical file back to the same path: it is
+        // removed, and the vault keeps one copy of the content
         create_test_file(&files_dir, "svc.exe", b"payload");
         let again = vault.quarantine(&file_path, "T", "trojan", 100, true);
         assert!(again.success, "{:?}", again.error);
         assert!(!file_path.exists());
+        assert_eq!(vault.count().unwrap(), 1);
     }
 
     #[cfg(unix)]

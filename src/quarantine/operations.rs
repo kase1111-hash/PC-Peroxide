@@ -15,15 +15,34 @@ use crate::core::error::{Error, Result};
 
 /// Whether other directory entries share this file's data (hard links).
 #[cfg(unix)]
-fn has_other_links(metadata: &fs::Metadata) -> bool {
+fn has_other_links(_path: &Path, metadata: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
     metadata.nlink() > 1
 }
 
 /// Whether other directory entries share this file's data (hard links).
-#[cfg(not(unix))]
-fn has_other_links(_metadata: &fs::Metadata) -> bool {
-    // The link count is not available on stable Rust for Windows.
+#[cfg(windows)]
+fn has_other_links(path: &Path, _metadata: &fs::Metadata) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle is valid while `file` is alive and `info` is a
+    // properly sized out-parameter.
+    let ok =
+        unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle() as isize), &mut info) };
+    ok.is_ok() && info.nNumberOfLinks > 1
+}
+
+/// Whether other directory entries share this file's data (hard links).
+#[cfg(not(any(unix, windows)))]
+fn has_other_links(_path: &Path, _metadata: &fs::Metadata) -> bool {
     false
 }
 
@@ -68,7 +87,7 @@ impl SecureOperations {
         // Overwriting a symlink would destroy its target, and overwriting a
         // hard link would destroy the data of every other name for it; only
         // remove this name.
-        if metadata.file_type().is_symlink() || has_other_links(&metadata) {
+        if metadata.file_type().is_symlink() || has_other_links(path, &metadata) {
             return fs::remove_file(path).map_err(|e| Error::FileDelete {
                 path: path.to_path_buf(),
                 source: e,
@@ -76,6 +95,12 @@ impl SecureOperations {
         }
 
         let file_size = metadata.len() as usize;
+
+        // Malware often marks itself read-only; that would make the
+        // overwrite fail before anything is removed.
+        if metadata.permissions().readonly() {
+            let _ = self.remove_readonly(path);
+        }
 
         if file_size > 0 {
             // Overwrite with random data
@@ -395,6 +420,33 @@ mod tests {
         ops.secure_delete(&file_path).unwrap();
 
         assert!(!file_path.exists());
+    }
+
+    #[test]
+    fn test_secure_delete_read_only_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("readonly.bin");
+        fs::write(&file_path, b"malware marked read-only").unwrap();
+        let mut perms = fs::metadata(&file_path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&file_path, perms).unwrap();
+
+        SecureOperations::new().secure_delete(&file_path).unwrap();
+        assert!(!file_path.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_secure_delete_keeps_hard_link_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("store.txt");
+        fs::write(&target, b"shared data").unwrap();
+        let hard = temp_dir.path().join("hard.txt");
+        fs::hard_link(&target, &hard).unwrap();
+
+        SecureOperations::new().secure_delete(&hard).unwrap();
+        assert!(!hard.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"shared data");
     }
 
     #[cfg(unix)]

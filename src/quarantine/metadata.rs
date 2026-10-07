@@ -354,14 +354,21 @@ impl QuarantineMetadata {
         Ok(count > 0)
     }
 
-    /// Check whether this content from this path is already quarantined.
-    pub fn exists_by_hash_and_path(&self, hash: &str, path: &Path) -> Result<bool> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM quarantine_items WHERE hash_sha256 = ?1 AND original_path = ?2",
+    /// Find the item holding this content from this path, if any.
+    pub fn find_by_hash_and_path(&self, hash: &str, path: &Path) -> Result<Option<QuarantineItem>> {
+        let id: Option<String> = match self.conn.query_row(
+            "SELECT id FROM quarantine_items WHERE hash_sha256 = ?1 AND original_path = ?2 LIMIT 1",
             rusqlite::params![hash, path.to_string_lossy()],
             |row| row.get(0),
-        )?;
-        Ok(count > 0)
+        ) {
+            Ok(id) => Some(id),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => return Err(e.into()),
+        };
+        match id {
+            Some(id) => self.get(&id),
+            None => Ok(None),
+        }
     }
 }
 
